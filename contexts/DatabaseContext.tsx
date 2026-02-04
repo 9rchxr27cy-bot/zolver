@@ -1,7 +1,10 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { User, JobRequest, Proposal, ChatMessage, JobStatus, Transaction } from '../types';
-import { MOCK_CLIENT, MOCK_PRO, MOCK_JOBS, MOCK_PROPOSALS } from '../constants';
+import { User, JobRequest, Proposal, ChatMessage, JobStatus, Transaction, Role, Product, SystemConfig, MonetizationConfig, PartnerIntegration } from '../types';
+import { notifyProNewRequest, notifyClientJobDone } from '../services/notificationService';
+
+// ... inside component ...
+import { MOCK_CLIENT, MOCK_PRO, MOCK_JOBS, MOCK_PROPOSALS, MOCK_EMPLOYEE, MOCK_REVIEWS } from '../constants';
 import {
   collection,
   onSnapshot,
@@ -13,10 +16,17 @@ import {
   setDoc,
   deleteDoc,
   Timestamp,
-  getDocs
+  getDocs,
+  arrayUnion,
+  arrayRemove,
+  or
 } from 'firebase/firestore';
-import { db } from '../src/lib/firebase';
-import { generateBaseHandle } from '../utils/userUtils';
+import { db, auth, firebaseConfig } from '../src/lib/firebase';
+import { withSnapshotRetry } from '../src/lib/firestoreRetry';
+import { onAuthStateChanged, createUserWithEmailAndPassword, getAuth, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { initializeApp, deleteApp } from 'firebase/app';
+import { generateBaseHandle } from '@/utils/userUtils';
+import { logger } from '../src/services/loggerService';
 
 interface DatabaseContextType {
   users: User[];
@@ -24,10 +34,12 @@ interface DatabaseContextType {
   proposals: Proposal[];
   chats: Record<string, ChatMessage[]>;
   transactions: Transaction[];
+  followingIds: string[]; // Added
   isLoading: boolean;
+  currentUser: User | null;
   // Actions
   registerUser: (user: User) => Promise<void>;
-  updateUser: (user: User) => Promise<void>;
+  updateUser: (userId: string, updates: Partial<User>) => Promise<void>;
   createJob: (job: JobRequest) => Promise<void>;
   updateJob: (job: JobRequest) => Promise<void>;
   createProposal: (proposal: Proposal) => Promise<void>;
@@ -35,7 +47,6 @@ interface DatabaseContextType {
   addChatMessage: (chatId: string, message: ChatMessage) => Promise<void>;
   updateChatMessage: (chatId: string, msgId: string, updates: Partial<ChatMessage>) => Promise<void>;
   getChatMessages: (chatId: string) => ChatMessage[];
-  loginUser: (email: string, pass: string) => Promise<User | null>;
   createStaff: (bossId: string, staffData: Partial<User>) => Promise<void>;
   getStaffMembers: (bossId: string) => User[];
   deleteUser: (userId: string) => Promise<void>;
@@ -44,6 +55,17 @@ interface DatabaseContextType {
   addTransaction: (tx: Transaction) => Promise<void>;
   followUser: (currentUserId: string, targetUserId: string) => Promise<void>;
   unfollowUser: (currentUserId: string, targetUserId: string) => Promise<void>;
+  createEmployee: (employeeData: User, password: string) => Promise<void>;
+  resetDatabase: () => Promise<void>;
+  // STORE
+  products: Product[];
+  addProduct: (product: Omit<Product, 'id'>) => Promise<string>;
+  updateProduct: (id: string, updates: Partial<Product>) => Promise<void>;
+  deleteProduct: (id: string) => Promise<void>;
+  // CONFIG
+  systemConfig: SystemConfig | null;
+  updateSystemConfig: (data: Partial<MonetizationConfig>) => Promise<void>;
+  addPartner: (partner: PartnerIntegration) => Promise<void>;
 }
 
 const DatabaseContext = createContext<DatabaseContextType | undefined>(undefined);
@@ -54,55 +76,176 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [chats, setChats] = useState<Record<string, ChatMessage[]>>({});
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [systemConfig, setSystemConfig] = useState<SystemConfig | null>(null);
+  const [followingIds, setFollowingIds] = useState<string[]>([]);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   // --- Real-time Subscriptions ---
 
   useEffect(() => {
-    // Users Subscription
-    const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
-      const usersList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+    let unsubUsers: any;
+    let unsubFollows: any;
+    let unsubJobs: any;
+    let unsubProposals: any;
+    let unsubChats: any;
+    let unsubTransactions: any;
+    let unsubProducts: any;
+    let unsubMonetization: any;
+    let unsubPartners: any;
 
-      // If no users exist, seed initial mocks for demo (optional, remove for prod)
-      if (usersList.length === 0) {
-        // We could seed here, but for now let's just use what's in DB
+    const setupSubscriptions = (isAuth: boolean) => {
+      // Clean up previous if any
+      unsubUsers && unsubUsers();
+      unsubJobs && unsubJobs();
+      unsubProposals && unsubProposals();
+      unsubChats && unsubChats();
+      unsubTransactions && unsubTransactions();
+      unsubProducts && unsubProducts();
+      unsubMonetization && unsubMonetization();
+      unsubPartners && unsubPartners();
+
+      logger.info('DB_SETUP', `Setting up subscriptions, isAuth: ${isAuth}`);
+      if (!isAuth) {
+        logger.info('DB_SETUP', 'Not authenticated, skipping subscriptions');
+        setIsLoading(false);
+        return;
       }
-      setUsers(usersList);
-    });
 
-    // Jobs Subscription
-    const unsubJobs = onSnapshot(collection(db, 'jobs'), (snapshot) => {
-      const jobsList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as JobRequest));
-      setJobs(jobsList);
-    });
+      logger.info('DB_SETUP', 'Authenticated, starting subscriptions');
+      // Users Subscription with Retry Logic
+      unsubUsers = withSnapshotRetry(
+        collection(db, 'users'),
+        (snapshot) => {
+          logger.info('DB_USERS', `Snapshot received, size: ${snapshot.size}`);
+          const usersList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+          setUsers(usersList);
 
-    // Proposals Subscription
-    const unsubProposals = onSnapshot(collection(db, 'proposals'), (snapshot) => {
-      const proposalsList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Proposal));
-      setProposals(proposalsList);
-    });
+          // Update currentUser if it's among the loaded users
+          if (auth.currentUser) {
+            const u = usersList.find(user => user.id === auth.currentUser?.uid);
+            if (u) setCurrentUser(u);
+          }
+        },
+        (err) => {
+          logger.error("DB_SUB_USERS", err.message);
+          console.error('[DB] Users subscription error, retry logic will handle reconnection:', err);
+        },
+        { maxRetries: 5, initialDelay: 2000, maxDelay: 30000 } // More aggressive retry for critical data
+      );
 
-    // Chats Subscription (this might be too heavy for ALL chats, but okay for MVP)
-    const unsubChats = onSnapshot(collection(db, 'chats'), (snapshot) => {
-      // This is tricky because we structure chats as Record<string, ChatMessage[]>
-      // Ideally we fetch chats on demand or subscribe to user's chats
-      // For MVP, let's fetch messages for active chats
-    });
+      // Jobs Subscription
+      // Jobs Subscription (Safe Query)
+      const jobsQuery = query(
+        collection(db, 'jobs'),
+        or(
+          where('clientId', '==', auth.currentUser?.uid || 'guest'),
+          where('status', '==', 'OPEN')
+        )
+      );
 
-    // Transactions Subscription
-    const unsubTransactions = onSnapshot(collection(db, 'transactions'), (snapshot) => {
-      const txList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Transaction));
-      setTransactions(txList);
-    });
+      unsubJobs = onSnapshot(jobsQuery, (snapshot) => {
+        const jobsList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as JobRequest));
+        setJobs(jobsList);
+      }, (err) => {
+        logger.error('DB_JOBS', err.message);
+        // Fallback: If 'or' query fails (e.g. requires index), try just fetching own jobs
+        if (err.code === 'failed-precondition' || err.code === 'permission-denied') {
+          logger.warn('DB_JOBS_FALLBACK', `Using fallback query for jobs, code: ${err.code}`);
+          if (unsubJobs) unsubJobs(); // Properly cleanup before creating new subscription
+          const fallbackQuery = query(collection(db, 'jobs'), where('clientId', '==', auth.currentUser?.uid));
+          unsubJobs = onSnapshot(fallbackQuery, (sn) => {
+            const list = sn.docs.map(d => ({ id: d.id, ...d.data() } as JobRequest));
+            setJobs(list);
+          });
+        }
+      });
 
-    setIsLoading(false);
+      // Proposals Subscription with Retry Logic (query filtered by user)
+      const proposalsQuery = query(
+        collection(db, 'proposals'),
+        where('proId', '==', auth.currentUser?.uid || 'guest')
+      );
+      unsubProposals = withSnapshotRetry(
+        proposalsQuery,
+        (snapshot) => {
+          const proposalsList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Proposal));
+          setProposals(proposalsList);
+        },
+        (err) => console.error('[DB] Proposals subscription error, will retry:', err),
+        { maxRetries: 3 }
+      );
+
+      // Transactions Subscription (query filtered by user)
+      const transactionsQuery = query(
+        collection(db, 'transactions'),
+        where('userId', '==', auth.currentUser?.uid || 'guest')
+      );
+      unsubTransactions = onSnapshot(transactionsQuery, (snapshot) => {
+        const txList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Transaction));
+        setTransactions(txList);
+      }, (err) => logger.info('DB_TRANSACTIONS', `Subscription restricted: ${err.message}`));
+
+      // Products Subscription with Retry Logic
+      unsubProducts = withSnapshotRetry(
+        collection(db, 'products'),
+        (snapshot) => {
+          const productList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
+          setProducts(productList);
+        },
+        (err) => console.error('[DB] Products subscription error, will retry:', err),
+        { maxRetries: 3, initialDelay: 1500 }
+      );
+
+      // System Config Subscriptions
+      const monetizationDoc = doc(db, 'system_config', 'monetization');
+      unsubMonetization = onSnapshot(monetizationDoc, (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data() as MonetizationConfig;
+          setSystemConfig(prev => ({
+            monetization: data,
+            partners: prev?.partners || []
+          }));
+        }
+      });
+
+      const partnersDoc = doc(db, 'system_config', 'partners');
+      unsubPartners = onSnapshot(partnersDoc, (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data() as { list: PartnerIntegration[] };
+          setSystemConfig(prev => ({
+            monetization: prev?.monetization || { docId: 'monetization', commissionRateDefault: 15, subscriptionPlans: [], boostPlans: [] },
+            partners: data.list || []
+          }));
+        }
+      });
+
+      // Follows Subscription (My Follows)
+      const followsQuery = query(collection(db, 'follows'), where('followerId', '==', auth.currentUser?.uid));
+      unsubFollows = onSnapshot(followsQuery, (snapshot) => {
+        const ids = snapshot.docs.map(doc => doc.data().targetId || doc.data().followingId);
+        setFollowingIds(ids);
+      }, (err) => console.log("Follows subscription error", err));
+
+      setIsLoading(false);
+    };
+
+    const unsubAuth = onAuthStateChanged(auth, (user) => {
+      setupSubscriptions(!!user);
+    });
 
     return () => {
-      unsubUsers();
-      unsubJobs();
-      unsubProposals();
-      unsubChats();
-      unsubTransactions();
+      unsubAuth();
+      unsubUsers && unsubUsers();
+      unsubJobs && unsubJobs();
+      unsubProposals && unsubProposals();
+      unsubChats && unsubChats();
+      unsubTransactions && unsubTransactions();
+      unsubFollows && unsubFollows();
+      unsubProducts && unsubProducts();
+      unsubMonetization && unsubMonetization();
+      unsubPartners && unsubPartners();
     };
   }, []);
 
@@ -113,18 +256,30 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   // --- Actions ---
 
+  const resetDatabase = async () => {
+    setIsLoading(true);
+    try {
+      const { seedService } = await import('../src/services/seedService');
+      await seedService.resetDatabase();
+      // Reload users to reflect changes
+      const snapshot = await getDocs(collection(db, 'users'));
+      setUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User)));
+    } catch (error) {
+      console.error("Reset Failed:", error);
+      alert("Reset Failed! Check console.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const registerUser = async (user: User) => {
     // 1. Generate Handle if missing
     let finalUser = { ...user };
     if (!finalUser.username) {
-      let baseHandle = generateBaseHandle(finalUser.name);
-      // Simple uniqueness check could be done here or relied on Rules/Next Update
-      // For MVP: append random digits if needed, or just set it.
-      // We'll trust the user to change it later if they want specific.
-      // But let's add 4 digits to be safe by default
+      let baseHandle = await generateBaseHandle(finalUser.name);
       const randomSuffix = Math.floor(1000 + Math.random() * 9000);
       finalUser.username = `@${baseHandle}${randomSuffix}`;
-      finalUser.username_lower = finalUser.username.toLowerCase();
+      finalUser.username_lower = (finalUser.username || '').toLowerCase();
     }
 
     // Initialize social arrays
@@ -135,50 +290,35 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     await setDoc(doc(db, 'users', finalUser.id), finalUser);
   };
 
-  const updateUser = async (updatedUser: User) => {
+  const updateUser = async (userId: string, updates: Partial<User>) => {
     // Update lowercase handle if username changes
-    if (updatedUser.username) {
-      updatedUser.username_lower = updatedUser.username.toLowerCase();
+    if (updates.username) {
+      updates.username_lower = (updates.username || '').toLowerCase();
     }
-    await updateDoc(doc(db, 'users', updatedUser.id), { ...updatedUser });
+    await setDoc(doc(db, 'users', userId), updates, { merge: true });
   };
 
   const followUser = async (currentUserId: string, targetUserId: string) => {
     if (!currentUserId || !targetUserId) return;
 
-    const currentUserRef = doc(db, 'users', currentUserId);
-    const targetUserRef = doc(db, 'users', targetUserId);
+    // Composite ID: followerId_targetId
+    const followId = `${currentUserId}_${targetUserId}`;
+    const followRef = doc(db, 'follows', followId);
 
-    // Update Current User (Following)
-    const currentUserDoc = users.find(u => u.id === currentUserId);
-    const newFollowing = [...(currentUserDoc?.following || [])];
-    if (!newFollowing.includes(targetUserId)) newFollowing.push(targetUserId);
-
-    // Update Target User (Followers)
-    const targetUserDoc = users.find(u => u.id === targetUserId);
-    const newFollowers = [...(targetUserDoc?.followers || [])];
-    if (!newFollowers.includes(currentUserId)) newFollowers.push(currentUserId);
-
-    await updateDoc(currentUserRef, { following: newFollowing });
-    await updateDoc(targetUserRef, { followers: newFollowers });
+    await setDoc(followRef, {
+      followerId: currentUserId,
+      followingId: targetUserId,
+      createdAt: new Date().toISOString() // serverTimestamp is better but Date string is safer for simple clients
+    });
   };
 
   const unfollowUser = async (currentUserId: string, targetUserId: string) => {
     if (!currentUserId || !targetUserId) return;
 
-    const currentUserRef = doc(db, 'users', currentUserId);
-    const targetUserRef = doc(db, 'users', targetUserId);
+    const followId = `${currentUserId}_${targetUserId}`;
+    const followRef = doc(db, 'follows', followId);
 
-    // Update Current User (Following)
-    const currentUserDoc = users.find(u => u.id === currentUserId);
-    const newFollowing = (currentUserDoc?.following || []).filter(id => id !== targetUserId);
-
-    // Update Target User (Followers)
-    const targetUserDoc = users.find(u => u.id === targetUserId);
-    const newFollowers = (targetUserDoc?.followers || []).filter(id => id !== currentUserId);
-
-    await updateDoc(currentUserRef, { following: newFollowing });
-    await updateDoc(targetUserRef, { followers: newFollowers });
+    await deleteDoc(followRef);
   };
 
   const deleteUser = async (userId: string) => {
@@ -187,25 +327,6 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   // ... (rest of code)
 
-  const loginUser = async (email: string, pass: string): Promise<User | null> => {
-    // In real app, use firebase/auth
-    // Here we query Firestore for the email (INSECURE for password, but matches request scope)
-    const q = query(collection(db, 'users'), where('email', '==', email));
-    const snapshot = await getDocs(q);
-
-    if (snapshot.empty) return null;
-
-    const user = { id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as User;
-
-    // Employee Check: Must be active
-    if (user.role === 'EMPLOYEE' && user.isActive === false) return null;
-
-    // Simple password check (Mock logic migrated)
-    if (user.password) {
-      return user.password === pass ? user : null;
-    }
-    return pass === 'password123' ? user : null;
-  };
 
   const createJob = async (job: JobRequest) => {
     // Ensure ID is set
@@ -300,9 +421,87 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     return users.filter(u => u.companyId === bossId && u.role === 'EMPLOYEE');
   };
 
+  // --- EMPLOYEE CREATION (SECONDARY APP) ---
+  const createEmployee = async (employeeData: User, password: string) => {
+    // 1. Initialize secondary app to avoid logging out the current admin
+    const secondaryApp = initializeApp(firebaseConfig, "Secondary");
+    const secondaryAuth = getAuth(secondaryApp);
+
+    try {
+      // 2. Create Authentication User
+      const userCredential = await createUserWithEmailAndPassword(secondaryAuth, employeeData.email, password);
+      const newUser = userCredential.user;
+
+      // 3. Prepare Firestore Data
+      // Ensure critical fields are set
+      const finalUserData: User = {
+        ...employeeData,
+        id: newUser.uid,
+        companyId: auth.currentUser?.uid, // Link to Admin
+        role: (employeeData.role as Role) || 'TECHNICIAN', // System Role
+        jobTitle: employeeData.jobTitle || employeeData.role || 'Technician', // Display Role
+        isEmployee: true,
+        isActive: true, // Default Active Status
+        joinedDate: new Date().toISOString(),
+        isVerified: true, // Internal employees are verified by Admin
+        rating: 5.0,
+        reviewsCount: 0,
+        xp: 0,
+        level: 'Novice'
+      };
+
+      // 4. Save to Firestore
+      await setDoc(doc(db, 'users', newUser.uid), finalUserData);
+
+      console.log(`[DB] Employee ${finalUserData.email} created successfully with ID ${newUser.uid}`);
+
+      // 5. Cleanup
+      await signOut(secondaryAuth);
+    } catch (error) {
+      logger.error("DB_CREATE_EMPLOYEE", "Error creating employee", error instanceof Error ? error.message : "Unknown error");
+      throw error;
+    } finally {
+      // Always delete the secondary app
+      await deleteApp(secondaryApp);
+    }
+  };
+
   const addTransaction = async (tx: Transaction) => {
     await setDoc(doc(db, 'transactions', tx.id), tx);
   };
+
+  // --- STORE ACTIONS ---
+  const addProduct = async (product: Omit<Product, 'id'>) => {
+    const newRef = doc(collection(db, 'products'));
+    await setDoc(newRef, { ...product, id: newRef.id });
+    return newRef.id;
+  };
+
+  const updateProduct = async (id: string, updates: Partial<Product>) => {
+    await updateDoc(doc(db, 'products', id), updates);
+  };
+
+  const deleteProduct = async (id: string) => {
+    await deleteDoc(doc(db, 'products', id));
+  };
+
+  // --- CONFIG ACTIONS ---
+  const updateSystemConfig = async (data: Partial<MonetizationConfig>) => {
+    await setDoc(doc(db, 'system_config', 'monetization'), data, { merge: true });
+  };
+
+  const addPartner = async (partner: PartnerIntegration) => {
+    // For now, simpler implementation: could be a subcollection or array in a doc
+    // Let's assume we manage it locally or in a 'partners' collection later.
+    // For this task, we will just log or simulate save since backend structure for partners wasn't explicitly strictly defined as collection vs doc.
+    // We will assume 'system_config/partners' doc with an array 'list'.
+    const partnersDoc = doc(db, 'system_config', 'partners');
+    await setDoc(partnersDoc, {
+      list: arrayUnion(partner)
+    }, { merge: true });
+  };
+
+
 
   return (
     <DatabaseContext.Provider value={{
@@ -311,6 +510,10 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
       proposals,
       chats,
       transactions,
+      products,
+      systemConfig,
+      currentUser,
+      followingIds, // Added
       isLoading,
       registerUser,
       updateUser,
@@ -321,14 +524,22 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
       addChatMessage,
       updateChatMessage,
       getChatMessages,
-      loginUser,
       createStaff,
       getStaffMembers,
       deleteUser,
       deleteJob: async (jobId: string) => {
         await deleteDoc(doc(db, 'jobs', jobId));
       },
-      addTransaction
+      addTransaction,
+      createEmployee,
+      followUser,
+      unfollowUser,
+      addProduct,
+      updateProduct,
+      deleteProduct,
+      updateSystemConfig,
+      addPartner,
+      resetDatabase
     }}>
       {children}
     </DatabaseContext.Provider>

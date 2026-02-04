@@ -1,6 +1,6 @@
-import { Job } from '../types';
+import { JobRequest } from '../types';
 
-export const generateGoogleCalendarLink = (job: Job): string => {
+export const generateGoogleCalendarLink = (job: JobRequest): string => {
     if (!job.scheduledDate) return '';
 
     const startTime = new Date(typeof job.scheduledDate === 'string' ? job.scheduledDate : (job.scheduledDate as any).seconds * 1000);
@@ -8,15 +8,15 @@ export const generateGoogleCalendarLink = (job: Job): string => {
 
     const formatDate = (date: Date) => date.toISOString().replace(/-|:|\.\d\d\d/g, "");
 
-    const title = encodeURIComponent(job.title);
+    const title = encodeURIComponent(job.title || job.category);
     const details = encodeURIComponent(job.description);
-    const location = encodeURIComponent(job.location.address);
+    const location = encodeURIComponent(job.location);
     const dates = `${formatDate(startTime)}/${formatDate(endTime)}`;
 
     return `https://www.google.com/calendar/render?action=TEMPLATE&text=${title}&details=${details}&location=${location}&dates=${dates}`;
 };
 
-export const downloadICSFile = (job: Job): string => {
+export const downloadICSFile = (job: JobRequest): string => {
     if (!job.scheduledDate) return '';
 
     const startTime = new Date(typeof job.scheduledDate === 'string' ? job.scheduledDate : (job.scheduledDate as any).seconds * 1000);
@@ -32,9 +32,9 @@ UID:${job.id}@zolver.com
 DTSTAMP:${formatDate(new Date())}
 DTSTART:${formatDate(startTime)}
 DTEND:${formatDate(endTime)}
-SUMMARY:${job.title}
+SUMMARY:${job.title || job.category}
 DESCRIPTION:${job.description}
-LOCATION:${job.location.address}
+LOCATION:${job.location}
 END:VEVENT
 END:VCALENDAR`;
 

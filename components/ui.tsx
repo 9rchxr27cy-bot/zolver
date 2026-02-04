@@ -76,11 +76,12 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   error?: string;
 }
 
-export const Input: React.FC<InputProps> = ({ label, error, className, ...props }) => {
+export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ label, error, className, ...props }, ref) => {
   return (
     <div className="w-full">
       {label && <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">{label}</label>}
       <input
+        ref={ref}
         className={cn(
           // UPDATED RING COLOR
           'w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-orange-500/50 transition-all placeholder:text-slate-400',
@@ -92,7 +93,8 @@ export const Input: React.FC<InputProps> = ({ label, error, className, ...props 
       {error && <p className="mt-1 text-xs text-red-500">{error}</p>}
     </div>
   );
-};
+});
+Input.displayName = "Input";
 
 interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode;

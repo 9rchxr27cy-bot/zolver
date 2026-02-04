@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ShieldCheck,
@@ -27,9 +27,9 @@ import {
   X as XSimple
 } from 'lucide-react';
 import { Button, Input, Card, LevelBadge, ZolverLogo } from '../components/ui';
+import { AddressAutocomplete, AddressFormData } from '../components/AddressAutocomplete';
 import { useLanguage } from '../contexts/LanguageContext';
 import { CATEGORIES } from '../constants';
-import { User } from '../types';
 
 export const WelcomeScreen: React.FC<{ onLogin: (role: 'CLIENT' | 'PRO') => void }> = ({ onLogin }) => {
   const { t } = useLanguage();
@@ -158,11 +158,24 @@ export const ProOnboarding: React.FC<{ onComplete: (data: any) => void }> = ({ o
     declarationAccepted: false
   });
 
+  // Address Autocomplete Hook REMOVED - Managed by AddressAutocomplete component now
+  // const { data: addressData, loading: addressLoading } = useLuxAddress(formData.postalCode);
+
+  // useEffect(() => {
+  //   if (addressData?.city) {
+  //     setFormData(prev => ({ ...prev, locality: addressData.city }));
+  //   }
+  // }, [addressData]);
+
   const nextStep = () => setStep(s => Math.min(s + 1, 6));
   const prevStep = () => setStep(s => Math.max(s - 1, 1));
 
-  const updateForm = (field: string, value: any) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+  const updateForm = (field: string | Partial<typeof formData>, value?: any) => {
+    if (typeof field === 'object') {
+      setFormData(prev => ({ ...prev, ...field }));
+    } else {
+      setFormData(prev => ({ ...prev, [field]: value }));
+    }
   };
 
   const toggleCategory = (catId: string) => {
@@ -241,7 +254,7 @@ export const ProOnboarding: React.FC<{ onComplete: (data: any) => void }> = ({ o
         </div>
         <div className="mt-4 text-center">
           <h2 className="text-xl font-bold text-slate-900 dark:text-white">{steps[step - 1].title}</h2>
-          <p className="text-xs text-slate-500">{t.stepIndicator.replace('{step}', step.toString()).replace('{total}', '6')}</p>
+          <p className="text-xs text-slate-500">{(t.stepIndicator || '').replace('{step}', step.toString()).replace('{total}', '6')}</p>
         </div>
       </div>
 
@@ -254,7 +267,7 @@ export const ProOnboarding: React.FC<{ onComplete: (data: any) => void }> = ({ o
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -10 }}
             transition={{ duration: 0.2 }}
-            className="space-y-4"
+            {...({ className: "space-y-4" } as any)}
           >
             {step === 1 && (
               <div className="space-y-4">
@@ -270,15 +283,30 @@ export const ProOnboarding: React.FC<{ onComplete: (data: any) => void }> = ({ o
                   <Input label={t.confirmPasswordLabel} type="password" value={formData.confirmPassword} onChange={e => updateForm('confirmPassword', e.target.value)} placeholder="••••••" error={formData.confirmPassword && formData.password !== formData.confirmPassword ? "Mismatch" : undefined} />
                 </div>
 
-                <Input label={t.cnsNumber} value={formData.cnsNumber} onChange={e => updateForm('cnsNumber', e.target.value.replace(/\D/g, '').slice(0, 13))} placeholder="YYYYMMDDXXXXX" />
+                <Input label={t.cnsNumber} value={formData.cnsNumber} onChange={e => updateForm('cnsNumber', (e.target.value || '').replace(/\D/g, '').slice(0, 13))} placeholder="YYYYMMDDXXXXX" />
 
-                <div className="grid grid-cols-4 gap-3">
-                  <div className="col-span-3"><Input label={t.street} value={formData.street} onChange={e => updateForm('street', e.target.value)} /></div>
-                  <div className="col-span-1"><Input label="N°" value={formData.houseNumber} onChange={e => updateForm('houseNumber', e.target.value)} /></div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <Input label={t.postalCode} value={formData.postalCode} onChange={e => { let val = e.target.value.toUpperCase(); if (!val.startsWith('L-') && val.length > 0) val = 'L-' + val; updateForm('postalCode', val.slice(0, 6)); }} placeholder="L-XXXX" />
-                  <Input label={t.locality} value={formData.locality} onChange={e => updateForm('locality', e.target.value)} />
+                <div className="space-y-4">
+                  <AddressAutocomplete
+                    value={{
+                      street: formData.street,
+                      number: formData.houseNumber,
+                      postalCode: formData.postalCode,
+                      city: formData.locality,
+                      country: 'Luxembourg',
+                      floor: '', // Not in formData yet?
+                      residence: '' // Not in formData yet?
+                    }}
+                    onChange={(newData) => {
+                      updateForm({
+                        street: newData.street,
+                        houseNumber: newData.number,
+                        postalCode: newData.postalCode,
+                        locality: newData.city
+                      });
+                      // Store floor/residence if I add them to formData later
+                    }}
+                    showDetails={true}
+                  />
                 </div>
                 <div className={`mt-4 border-2 border-dashed rounded-xl p-4 flex flex-col items-center gap-2 cursor-pointer transition-colors ${formData.idUploaded ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/10' : 'border-slate-200 dark:border-slate-800'}`} onClick={() => updateForm('idUploaded', true)}>
                   <Upload size={20} className={formData.idUploaded ? 'text-orange-500' : 'text-slate-400'} />
@@ -441,7 +469,7 @@ export const ProOnboarding: React.FC<{ onComplete: (data: any) => void }> = ({ o
                   <Input
                     label={t.iban}
                     value={formData.iban}
-                    onChange={e => updateForm('iban', e.target.value.replace(/\s/g, '').toUpperCase())}
+                    onChange={e => updateForm('iban', (e.target.value || '').replace(/\s/g, '').toUpperCase())}
                     placeholder="LUXX XXXX XXXX XXXX XXXX"
                   />
                   <Input
@@ -515,8 +543,7 @@ export const ProOnboarding: React.FC<{ onComplete: (data: any) => void }> = ({ o
 
                     <div className="bg-black/30 rounded-lg p-3 flex items-center justify-between backdrop-blur-sm border border-white/10">
                       <div className="flex items-center gap-2 overflow-hidden">
-                        <Globe size={14} className="text-orange-400 shrink-0" />
-                        <span className="text-xs font-mono truncate">zolver.lu/{formData.companyName.replace(/\s+/g, '-').toLowerCase()}</span>
+                        <span className="text-xs font-mono truncate">zolver.lu/{(formData.companyName || '').replace(/\s+/g, '-').toLowerCase()}</span>
                       </div>
                       <span className="text-[10px] font-bold uppercase bg-white/20 px-2 py-0.5 rounded">{t.visitSite}</span>
                     </div>
@@ -605,23 +632,36 @@ export const ProOnboarding: React.FC<{ onComplete: (data: any) => void }> = ({ o
 export const LoginModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
-  onLogin: (email: string, pass: string) => void;
+  onLogin: (email: string, pass: string) => Promise<void>;
   onSignUpClick: () => void;
-}> = ({ isOpen, onClose, onLogin, onSignUpClick }) => {
+  onForgotPasswordClick: () => void;
+}> = ({ isOpen, onClose, onLogin, onSignUpClick, onForgotPasswordClick }) => {
   const { t } = useLanguage();
-  const [email, setEmail] = useState('alice@client.com'); // Default for demo
-  const [password, setPassword] = useState('password');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log("Login submitted", { email }); // Debug log
+    if (!email || !password) {
+      setError("Please enter both email and password.");
+      return;
+    }
+
     setLoading(true);
-    // Simulate DB delay
-    setTimeout(() => {
+    setError(null);
+    try {
+      await onLogin(email, password);
+      console.log("Login successful");
       setLoading(false);
-      onLogin(email, password);
-      onClose();
-    }, 800);
+      // onClose is handled in the parent usually, but just in case
+    } catch (err: any) {
+      console.error("Erro no login:", err); // User requested log
+      setLoading(false);
+      setError(err.message || 'Login failed. Please check your credentials.');
+    }
   };
 
   return (
@@ -632,14 +672,13 @@ export const LoginModal: React.FC<{
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            {...({ onClick: onClose, className: "absolute inset-0 bg-black/60 backdrop-blur-sm" } as any)}
           />
           <motion.div
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="relative bg-white dark:bg-slate-900 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden z-10 p-8"
+            {...({ className: "relative bg-white dark:bg-slate-900 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden z-10 p-8" } as any)}
           >
             <button
               onClick={onClose}
@@ -654,6 +693,11 @@ export const LoginModal: React.FC<{
               </div>
               <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-2">{t.welcomeBack}</h2>
               <p className="text-slate-500 text-sm">Enter your credentials to access your account</p>
+              {error && (
+                <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-xs font-bold rounded-xl border border-red-100 dark:border-red-900/30">
+                  {error}
+                </div>
+              )}
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -679,7 +723,7 @@ export const LoginModal: React.FC<{
               </div>
 
               <div className="flex justify-end">
-                <button type="button" className="text-xs font-bold text-orange-500 hover:text-orange-600">
+                <button type="button" onClick={() => { onClose(); onForgotPasswordClick(); }} className="text-xs font-bold text-orange-500 hover:text-orange-600">
                   Forgot Password?
                 </button>
               </div>
@@ -690,6 +734,13 @@ export const LoginModal: React.FC<{
               >
                 {loading ? <Loader2 className="animate-spin" /> : t.login}
               </Button>
+
+              <p className="text-[10px] text-center text-slate-400 mt-4 px-4 leading-relaxed">
+                Ao continuar, você concorda com nossos{' '}
+                <a href="/terms" className="text-orange-500 hover:underline">Termos de Uso</a>
+                {' '}e{' '}
+                <a href="/privacy" className="text-orange-500 hover:underline">Política de Privacidade</a>.
+              </p>
             </form>
 
             <div className="mt-8 pt-6 border-t border-slate-100 dark:border-slate-800 text-center">
@@ -705,12 +756,203 @@ export const LoginModal: React.FC<{
             <div className="mt-6 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-xl text-xs text-slate-400 text-center">
               <p className="font-bold mb-2 uppercase tracking-widest text-[10px]">Demo Credentials</p>
               <div className="grid grid-cols-3 gap-2">
-                <span className="cursor-pointer hover:text-orange-500" onClick={() => setEmail('alice@client.com')}>alice@client.com</span>
-                <span className="cursor-pointer hover:text-orange-500" onClick={() => setEmail('roberto@pro.com')}>roberto@pro.com</span>
-                <span className="cursor-pointer hover:text-orange-500" onClick={() => setEmail('luigi@staff.com')}>luigi@staff.com</span>
+                <span className="cursor-pointer hover:text-orange-500" onClick={() => setEmail('sophie.martin@email.lu')}>sophie.martin@email.lu</span>
+                <span className="cursor-pointer hover:text-orange-500" onClick={() => setEmail('jps@renovation.lu')}>jps@renovation.lu</span>
+                <span className="cursor-pointer hover:text-orange-500" onClick={() => setEmail('contact@cleanhome.lu')}>contact@cleanhome.lu</span>
               </div>
             </div>
 
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+};
+
+export const ClientSignupModal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  onSignUp: (data: any) => Promise<void>;
+  onLoginClick: () => void;
+}> = ({ isOpen, onClose, onSignUp, onLoginClick }) => {
+  const { t } = useLanguage();
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    password: '',
+    confirmPassword: ''
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (formData.password !== formData.confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
+    if (!formData.name || !formData.email || !formData.password) {
+      setError("Please fill in all required fields");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      await onSignUp({
+        email: formData.email,
+        password: formData.password,
+        name: formData.name,
+        phone: formData.phone // Save phone to profile
+      });
+      setLoading(false);
+      onClose();
+    } catch (err: any) {
+      setLoading(false);
+      setError(err.message || 'Signup failed. Please try again.');
+    }
+  };
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            {...({ onClick: onClose, className: "absolute inset-0 bg-black/60 backdrop-blur-sm" } as any)}
+          />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+            {...({ className: "relative bg-white dark:bg-slate-900 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden z-10 p-8" } as any)}
+          >
+            <button
+              onClick={onClose}
+              className="absolute top-4 right-4 p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            >
+              <XSimple size={20} className="text-slate-500" />
+            </button>
+
+            <div className="text-center mb-6">
+              <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-2 py-2">{t.createAccount}</h2>
+              <p className="text-slate-500 text-sm">Join as a Client to hire professionals</p>
+              {error && (
+                <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-xs font-bold rounded-xl">
+                  {error}
+                </div>
+              )}
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <Input label={t.fullName} value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} placeholder="John Doe" />
+              <Input label={t.email} type="email" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} placeholder="name@example.com" />
+              <Input label={t.phoneLabel} type="tel" value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} placeholder="+352 6XX XXX XXX" />
+              <div className="grid grid-cols-2 gap-3">
+                <Input label={t.password} type="password" value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} placeholder="••••••" />
+                <Input label={t.confirmPasswordLabel} type="password" value={formData.confirmPassword} onChange={e => setFormData({ ...formData, confirmPassword: e.target.value })} placeholder="••••••" />
+              </div>
+
+              <Button
+                className="w-full h-14 text-lg font-bold rounded-xl shadow-lg shadow-orange-500/20 mt-2"
+                disabled={loading}
+              >
+                {loading ? <Loader2 className="animate-spin" /> : t.signUp}
+              </Button>
+
+              <p className="text-[10px] text-center text-slate-400 mt-4 px-4 leading-relaxed">
+                Ao continuar, você concorda com nossos{' '}
+                <a href="/terms" className="text-orange-500 hover:underline">Termos de Uso</a>
+                {' '}e{' '}
+                <a href="/privacy" className="text-orange-500 hover:underline">Política de Privacidade</a>.
+              </p>
+            </form>
+
+            <div className="mt-6 pt-6 border-t border-slate-100 dark:border-slate-800 text-center">
+              <p className="text-slate-500 text-sm">
+                Already have an account?{' '}
+                <button onClick={() => { onClose(); onLoginClick(); }} className="font-bold text-orange-500 hover:text-orange-600 transition-colors">
+                  Sign In
+                </button>
+              </p>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+};
+
+export const ForgotPasswordModal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  onReset: (email: string) => Promise<void>;
+}> = ({ isOpen, onClose, onReset }) => {
+  const { t } = useLanguage();
+  const [email, setEmail] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [msg, setMsg] = useState('');
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) return;
+    setLoading(true);
+    setStatus('idle');
+    try {
+      await onReset(email);
+      setStatus('success');
+      setMsg("Password reset email sent! Check your inbox.");
+      setLoading(false);
+    } catch (err: any) {
+      setStatus('error');
+      setMsg(err.message || "Failed to send reset email.");
+      setLoading(false);
+    }
+  };
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            {...({ onClick: onClose, className: "absolute inset-0 bg-black/60 backdrop-blur-sm" } as any)}
+          />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+            {...({ className: "relative bg-white dark:bg-slate-900 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden z-10 p-8" } as any)}
+          >
+            <button onClick={onClose} className="absolute top-4 right-4 p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+              <XSimple size={20} className="text-slate-500" />
+            </button>
+            <div className="text-center mb-6">
+              <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-2">Reset Password</h2>
+              <p className="text-slate-500 text-sm">Enter your email to receive reset instructions</p>
+            </div>
+
+            {status === 'success' ? (
+              <div className="bg-green-50 text-green-700 p-4 rounded-xl text-center">
+                <p className="font-bold mb-2">Email Sent!</p>
+                <p className="text-sm mb-4">{msg}</p>
+                <Button onClick={onClose} variant="outline" className="w-full">Close</Button>
+              </div>
+            ) : (
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <Input label={t.email} type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="name@example.com" />
+                {status === 'error' && <p className="text-red-500 text-xs font-bold">{msg}</p>}
+                <Button className="w-full h-12 font-bold rounded-xl" disabled={loading}>
+                  {loading ? <Loader2 className="animate-spin" /> : "Send Reset Link"}
+                </Button>
+              </form>
+            )}
           </motion.div>
         </div>
       )}

@@ -1,7 +1,6 @@
-
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Car, MapPin, Play, CheckCircle2, Clock, Loader2 } from 'lucide-react';
+import { Car, MapPin, Play, CheckCircle2, Clock, Loader2, Lock } from 'lucide-react';
 import { JobStatus } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
 
@@ -59,10 +58,10 @@ export const ServiceStatusHeader: React.FC<ServiceStatusHeaderProps> = ({ status
   const config = getStatusConfig();
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ height: 0, opacity: 0 }}
       animate={{ height: 'auto', opacity: 1 }}
-      className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shadow-sm z-20"
+      {...({ className: "bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shadow-sm z-20" } as any)}
     >
       <div className="px-4 py-3 flex items-center gap-4">
         <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 shadow-lg ${config.color}`}>
@@ -77,23 +76,28 @@ export const ServiceStatusHeader: React.FC<ServiceStatusHeaderProps> = ({ status
           </p>
         </div>
         {status === 'IN_PROGRESS' && (
-           <div className="px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-[10px] font-black uppercase rounded animate-pulse">
-              {t.recording}
-           </div>
+          <div className="px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-[10px] font-black uppercase rounded animate-pulse">
+            {t.recording}
+          </div>
+        )}
+        {status === 'EN_ROUTE' && (
+          <div className="px-2 py-1 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 text-[10px] font-black uppercase rounded animate-pulse">
+            LIVE TRACKING
+          </div>
         )}
       </div>
       {/* Progress Bar */}
       <div className="h-1 w-full bg-slate-100 dark:bg-slate-800">
-        <motion.div 
-            className={`h-full ${config.color}`} 
-            initial={{ width: '0%' }}
-            animate={{ 
-                width: status === 'CONFIRMED' ? '20%' : 
-                       status === 'EN_ROUTE' ? '40%' :
-                       status === 'ARRIVED' ? '60%' :
-                       status === 'IN_PROGRESS' ? '80%' : '100%'
-            }}
-            transition={{ duration: 0.5 }}
+        <motion.div
+          {...({ className: `h-full ${config.color}` } as any)}
+          initial={{ width: '0%' }}
+          animate={{
+            width: status === 'CONFIRMED' ? '20%' :
+              status === 'EN_ROUTE' ? '40%' :
+                status === 'ARRIVED' ? '60%' :
+                  status === 'IN_PROGRESS' ? '80%' : '100%'
+          }}
+          transition={{ duration: 0.5 }}
         />
       </div>
     </motion.div>

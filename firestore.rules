@@ -1,54 +1,221 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
+
+    // --- HELPER FUNCTIONS ---
+
     // Check if user is authenticated
     function isAuthenticated() {
       return request.auth != null;
     }
-    
-    // Check if user is accessing their own document
+
+    // Check if user matches the provided ID
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
-    
-    // --- USERS COLLECTION ---
-    match /users/{userId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && request.auth.uid == userId;
-      allow update: if isOwner(userId);
+
+    // Check if user is an ADMIN (by exact email or role field)
+    // WARN: Using get() is expensive (1 read), use custom claims if possible in production. 
+    // For this implementation, we check the request.auth.token.email for hardcoded admin 
+    // or look up the user document.
+    function isAdmin() {
+       return isAuthenticated() && (
+         request.auth.token.email == 'admin@zolver.com' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN'
+       );
     }
     
-    // --- JOBS COLLECTION ---
+    // Check if user is NOT update sensitive fields
+    function notUpdating(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // --- COLLECTION RULES ---
+
+    // USERS (Perfis)
+    match /users/{userId} {
+      // 1. Read: Public (Profiles are visible)
+      // Future improvement: Restrict reading specific private fields if needed
+      allow read: if true;
+
+      // 2. Create: Authenticated Users (First login)
+      allow create: if isOwner(userId);
+
+      // 3. Update: Owner can update BUT cannot change specific admin fields
+      // Block: confirmation status, validation, promotion status
+      allow update: if (isOwner(userId) && notUpdating(['isVerified', 'verificationStatus', 'isPromoted', 'marketingPlan', 'role'])) 
+                    || isAdmin();
+
+      // 4. Delete: Only Admin
+      allow delete: if isAdmin();
+      
+      // NOTIFICATIONS Subcollection
+      match /notifications/{notificationId} {
+        allow read, write: if isOwner(userId); // Only the user triggers or reads their own notifications
+        // Note: Writing notifications for OTHERS usually requires Cloud Functions (admin) 
+        // OR explicit permission if client writes to pro. 
+        // If Client writes to 'users/proID/notifications', we need to allow authenticated write 
+        // BUT strict validation.
+        allow create: if isAuthenticated(); // Allow others to send alerts (Offers, Requests)
+      }
+    }
+
+    // JOBS (Pedidos) - Requested as 'orders' in prompt, but codebase uses 'jobs'
     match /jobs/{jobId} {
-      allow read: if isAuthenticated();
+      // 1. Read: Public read is NOT allowed for privacy. 
+      // Only: Owner (Client), Assigned Pro, or Target Pro (Direct Request)
+      // Or if checking 'All Jobs' as a Pro? MARKET jobs are public-ish?
+      // Zolver Logic: 'OPEN' jobs are visible to Pros.
+      allow read: if isAuthenticated() && (
+        resource.data.clientId == request.auth.uid || // Creator
+        resource.data.assignedTo == request.auth.uid || // Executer
+        resource.data.target_company_id == request.auth.uid || // Direct Request Target
+        resource.data.lockedBy == request.auth.uid || // Locked by user (AgendaTab)
+        resource.data.assignedEmployeeId == request.auth.uid || // Assigned employee (AgendaTab)
+        resource.data.status == 'OPEN' || // Open Market Jobs are visible
+        isAdmin() // Admin can read all jobs
+      );
+
+      // 2. Create: Authenticated Users
       allow create: if isAuthenticated() && request.resource.data.clientId == request.auth.uid;
-      // Allow update if user is the client (owner) OR the assigned pro
+
+      // 3. Update: Involved parties
       allow update: if isAuthenticated() && (
-        resource.data.clientId == request.auth.uid || 
-        resource.data.assignedTo == request.auth.uid ||
-        // Allow Pros to bid/update status if they are involved (simplified for now, ideally tighter)
-        request.auth.token.role == 'PRO' // Basic check, ideally we check proposals
+         resource.data.clientId == request.auth.uid || 
+         resource.data.assignedTo == request.auth.uid ||
+         resource.data.target_company_id == request.auth.uid
+      );
+      
+      // 4. Delete: Client (Owner) or Admin
+      allow delete: if isAuthenticated() && (
+        resource.data.clientId == request.auth.uid ||
+        isAdmin()
       );
     }
 
-    // --- PROPOSALS COLLECTION ---
+    // PROPOSALS (Ofertas)
     match /proposals/{proposalId} {
+      allow read: if isAuthenticated() && (
+        resource.data.proId == request.auth.uid ||
+        // Allow Client to see proposals for THEIR job
+        get(/databases/$(database)/documents/jobs/$(resource.data.jobId)).data.clientId == request.auth.uid
+      );
+      
+      allow create: if isAuthenticated() && request.resource.data.proId == request.auth.uid;
+      
+      allow update: if isAuthenticated() && (
+         resource.data.proId == request.auth.uid || 
+         // Client can Accept/Reject
+         get(/databases/$(database)/documents/jobs/$(resource.data.jobId)).data.clientId == request.auth.uid
+      );
+    }
+
+    // REVIEWS
+    match /reviews/{reviewId} {
+      allow read: if true;
+      allow create: if isAuthenticated(); // Should strictly check if job was completed
+      allow update, delete: if isAdmin();
+    }
+    
+    // PRODUCTS (Store)
+    match /products/{productId} {
+    	allow read: if true;
+      allow write: if isAdmin();
+    }
+    
+    // TRANSACTIONS (Payment records)
+    match /transactions/{transactionId} {
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid || // Transaction owner
+        isAdmin()
+      );
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAdmin(); // Only admin can modify transactions
+    }
+    
+    // FOLLOWS (User following Pro)
+    match /follows/{followId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.followerId == request.auth.uid;
+      allow delete: if isAuthenticated() && resource.data.followerId == request.auth.uid;
     }
     
-    // --- CHATS COLLECTION ---
+    // SYSTEM_LOGS (Error and info logging)
+    match /system_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated(); // Allow all authenticated users to create logs
+      allow update, delete: if isAdmin();
+    }
+    
+    // VERIFICATION_REQUESTS (Pro verification submissions)
+    match /verification_requests/{requestId} {
+      // Users can read their own verification requests, admins can read all
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin() // Admin can read all verification requests for dashboard
+      );
+      
+      // Users can create verification requests for themselves
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      
+      // Only admins can update/delete (to approve/reject)
+      allow update, delete: if isAdmin();
+    }
+    
+    
+    // SYSTEM_ANNOUNCEMENTS (Admin broadcast messages)
+    match /system_announcements/{announcementId} {
+      // Public read for active announcements (banner display)
+      allow read: if true;
+      
+      // Only admins can create/update/delete announcements
+      allow write: if isAdmin();
+    }
+    
+    // MARKET_GAPS (Search analytics for identifying unmet demand)
+    match /market_gaps/{gapId} {
+      // Only admins can read analytics
+      allow read: if isAdmin();
+      
+      // Anyone can record gaps (anonymous search tracking)
+      allow create: if true;
+      allow update: if true; // For incrementing search counts
+      allow delete: if isAdmin();
+    }
+    
+    // CHATS (Conversations between clients and pros)
     match /chats/{chatId} {
+      // Authenticated users can read/write chats
+      // TODO: Refine to check if user is participant in chat
+      allow read, write: if isAuthenticated();
+      
+      // MESSAGES Subcollection
+      match /messages/{messageId} {
+        // Authenticated users can read/write messages
+        // TODO: Refine to check parent chat participation
         allow read, write: if isAuthenticated();
+      }
     }
     
-    // --- TRANSACTIONS ---
-    match /transactions/{txnId} {
-        allow read: if isAuthenticated();
-        // Transactions should generally be created by backend, but for this app structure we allow auth users for now
-        allow write: if isAuthenticated();
+    // APPOINTMENTS (Professional Calendar)
+    match /appointments/{appointmentId} {
+      // Professionals can read their own appointments
+      allow read: if isAuthenticated() && resource.data.professionalId == request.auth.uid;
+      
+      // Professionals can create appointments for themselves
+      allow create: if isAuthenticated() && request.resource.data.professionalId == request.auth.uid;
+      
+      // Professionals can update/delete their own appointments
+      allow update, delete: if isAuthenticated() && resource.data.professionalId == request.auth.uid;
+      
+      // Admins can read all appointments
+      allow read: if isAdmin();
+    }
+    
+    // SYSTEM_CONFIG (Application configuration)
+    match /system_config/{configId} {
+      allow read: if true; // Public read for configs like monetization
+      allow write: if isAdmin();
     }
   }
 }

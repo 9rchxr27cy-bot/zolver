@@ -21,16 +21,29 @@ import {
   Compass,
   Search,
   UserPlus,
-  UserMinus
+  UserMinus,
+  Megaphone,
+  Award,
+  ShoppingBag
 } from 'lucide-react';
 import { Button, Card } from '../components/ui';
 import { Proposal, JobRequest, User as UserType } from '../types';
 import { MOCK_JOBS, CATEGORIES, MOCK_REVIEWS, MOCK_CLIENT } from '../constants';
 import { useLanguage } from '../contexts/LanguageContext';
 import { UserProfileModal, PortfolioOverlay } from '../components/ServiceModals';
+import { ClientExploreView } from '../components/ClientExploreView';
 import { useDatabase } from '../contexts/DatabaseContext';
-import { query, collection, where, onSnapshot, doc } from 'firebase/firestore';
+import { query, collection, where, onSnapshot, doc, documentId } from 'firebase/firestore';
 import { db } from '../src/lib/firebase';
+import { ChatScreen } from './ChatScreen';
+
+import { SponsoredProsScreen } from './client/SponsoredProsScreen';
+import { HighlightsScreen } from './client/HighlightsScreen';
+import { ClientMenuScreen } from './client/ClientMenuScreen';
+import { StoreHome } from './store/StoreHome'; // Import Store
+import { BottomNavigation } from '../components/layout/BottomNavigation';
+import { ReviewModal } from '../components/reviews/ReviewModal';
+import { NotificationsBell } from '../components/NotificationsBell';
 
 interface ClientDashboardProps {
   jobs: JobRequest[];
@@ -39,22 +52,73 @@ interface ClientDashboardProps {
   onViewProfile: () => void;
   onEdit: (job: JobRequest) => void;
   onDirectRequest: (pro: UserType) => void;
+  onHireAgain: (pro: UserType, category: any) => void;
+  onStoreClick?: () => void; // Callback to navigate to Store (kept for compatibility)
   favorites?: string[];
+  activeProposal?: Proposal | null;
+  onClearProposal?: () => void;
+  currentView?: DashboardView;
+  onViewChange?: (view: DashboardView) => void;
+  // Passing these so ChatScreen can use them (forwarded from App)
+  chatHandlers?: {
+    onToggleFavorite?: (id: string) => void;
+    onToggleBlock?: (id: string) => void;
+    isFavorited?: (id: string) => boolean;
+    isBlocked?: (id: string) => boolean;
+  };
+  darkMode: boolean;
+  onToggleTheme: () => void;
 }
 
-type DashboardView = 'REQUESTS' | 'MARKET' | 'HISTORY' | 'MESSAGES' | 'FAVORITES' | 'INVOICES' | 'EXPLORE';
+export type DashboardView = 'REQUESTS' | 'MARKET' | 'HISTORY' | 'MESSAGES' | 'FAVORITES' | 'INVOICES' | 'EXPLORE' | 'FEATURED' | 'MY_ADS' | 'MENU' | 'ORDERS' | 'STORE';
 
-export const ClientDashboard: React.FC<ClientDashboardProps> = ({ jobs, onSelectProposal, onCreateNew, onViewProfile, onEdit, onDirectRequest, favorites = [] }) => {
+export const ClientDashboard: React.FC<ClientDashboardProps> = ({
+  jobs, onSelectProposal, onCreateNew, onViewProfile, onEdit, onDirectRequest, onHireAgain, onStoreClick, favorites = [],
+  currentView: propView, onViewChange, activeProposal, onClearProposal, chatHandlers, darkMode, onToggleTheme
+}) => {
   const { t, tCategory } = useLanguage();
   const { proposals, users, updateJob, updateProposal, deleteJob, transactions, followUser, unfollowUser } = useDatabase(); // Added transactions
 
-  const [currentView, setCurrentView] = useState<DashboardView>('REQUESTS');
+  const [internalView, setInternalView] = useState<DashboardView>('REQUESTS');
+
+  // Use prop if available, else internal state
+  const currentView = propView || internalView;
+  const setCurrentView = (view: DashboardView) => {
+    if (onViewChange) onViewChange(view);
+    else setInternalView(view);
+  };
+
   const [viewingPro, setViewingPro] = useState<Proposal | UserType | null>(null);
   const [viewingPortfolio, setViewingPortfolio] = useState<Proposal | null>(null);
 
   // Get Current User (Client)
   const [currentUser, setCurrentUser] = useState<UserType | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // REVIEW LOGIC STATE
+  const [reviewJob, setReviewJob] = useState<JobRequest | null>(null);
+  const [dismissedReviews, setDismissedReviews] = useState<string[]>([]);
+
+  useEffect(() => {
+    // Find first completed job without review that hasn't been dismissed
+    const jobToReview = jobs.find(j =>
+      j.status === 'COMPLETED' &&
+      !j.hasReview &&
+      !j.reviewId &&
+      !dismissedReviews.includes(j.id)
+    );
+
+    if (jobToReview && !reviewJob) {
+      setReviewJob(jobToReview);
+    }
+  }, [jobs, dismissedReviews, reviewJob]);
+
+  const handleNotificationClick = (type: string, data: any) => {
+    // Navigate to relevant screen
+    if (type === 'OFFER_MADE' || type === 'JOB_DONE') {
+      setCurrentView('REQUESTS');
+    }
+  };
 
   useEffect(() => {
     const stored = localStorage.getItem('servicebid_current_session_user');
@@ -89,16 +153,24 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ jobs, onSelect
     setMarketStatus('LOADING');
     console.log(`[ISOLATED MARKET] Starting listeners for Job ID: ${marketJobId}`);
 
-    // Listener 1: The Job Itself
-    const unsubJob = onSnapshot(doc(db, 'jobs', marketJobId), (docSnap) => {
-      if (docSnap.exists()) {
-        const jobData = { id: docSnap.id, ...docSnap.data() } as JobRequest;
+    // Listener 1: The Job Itself (using query to allow rules evaluation)
+    const jobQuery = query(
+      collection(db, 'jobs'),
+      where(documentId(), '==', marketJobId)
+    );
+
+    const unsubJob = onSnapshot(jobQuery, (snapshot) => {
+      if (!snapshot.empty) {
+        const jobData = { id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as JobRequest;
         console.log('[ISOLATED MARKET] Job Data Updated:', jobData);
         setLiveMarketJob(jobData);
       } else {
-        console.error('[ISOLATED MARKET] Job document not found!');
+        console.error('[ISOLATED MARKET] Job not accessible or does not exist');
         setMarketStatus('ERROR_NO_JOB');
       }
+    }, (error) => {
+      console.error('[ISOLATED MARKET] Job listener error:', error);
+      setMarketStatus('ERROR_NO_ACCESS');
     });
 
     // Listener 2: The Proposals
@@ -123,15 +195,25 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ jobs, onSelect
   }, [marketJobId]);
 
   // CRITICAL CHANGE: Logic to ACCEPT a bid explicitly and PERSIST IT
+  // CRITICAL CHANGE: Logic to ACCEPT a bid explicitly and PERSIST IT
   const handleAcceptBid = (proposal: Proposal) => {
     if (!liveMarketJob) return;
 
     // 1. Update Job Status to CONFIRMED (Closing it to other bids)
-    const updatedJob: JobRequest = { ...liveMarketJob, status: 'CONFIRMED', finalPrice: proposal.price };
+    // FIX: Add locking fields to prevent "orphaned" job
+    const updatedJob: JobRequest = {
+      ...liveMarketJob,
+      status: 'FUNDS_ESCROWED', // Start Escrow Flow
+      isLocked: true,
+      lockedBy: proposal.proId, // Lock to the Pro
+      acceptedProposalId: proposal.id,
+      finalPrice: proposal.price
+    };
+
     updateJob(updatedJob);
 
     // 2. Update Proposal Status in DB so Pro sees it
-    const confirmedProposal: Proposal = { ...proposal, status: 'CONFIRMED' };
+    const confirmedProposal: Proposal = { ...proposal, status: 'ACCEPTED' }; // Use ACCEPTED to match ChatScreen logic
     updateProposal(confirmedProposal); // Persist to DB
 
     // Navigate to chat
@@ -142,7 +224,7 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ jobs, onSelect
   const myChats = proposals.filter(p => {
     const relevantJob = jobs.find(j => j.id === p.jobId);
     // STRICT FILTER: Chat only appears if proposal is CONFIRMED.
-    return relevantJob && p.status === 'CONFIRMED';
+    return relevantJob && p.status === 'ACCEPTED';
   });
 
   const SidebarItem = ({ view, icon: Icon, label, count }: { view: DashboardView, icon: any, label?: string, count?: number }) => (
@@ -182,16 +264,27 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ jobs, onSelect
         <div className="w-10 h-px bg-slate-100 dark:bg-slate-800" />
 
         <nav className="flex flex-col gap-6 items-center w-full">
+          <SidebarItem view="MY_ADS" icon={Award} label="Featured Pros" />
           <SidebarItem view="REQUESTS" icon={FileText} label={t.myRequests} count={jobs.filter(j => j.status === 'IN_PROGRESS').length} />
+          {['ADMIN'].includes(currentUser?.role || '') && <SidebarItem view="INVOICES" icon={FileText} label="Invoices (Admin)" />}
           {selectedJobForMarket && (
             <SidebarItem view="MARKET" icon={LayoutDashboard} label={t.liveMarket} />
           )}
+          {/* STORE */}
+          <SidebarItem view="STORE" icon={ShoppingBag} label={t.storeTab || 'Loja Zolver'} />
           <SidebarItem view="MESSAGES" icon={MessageSquare} label={t.messagesTab} count={filterMyChats().length} />
           <SidebarItem view="HISTORY" icon={History} label={t.historyTab} />
           <SidebarItem view="EXPLORE" icon={Compass} label="Explore" />
+          <SidebarItem view="FEATURED" icon={Star} label="Spotlight" />
         </nav>
 
-        <div className="mt-auto">
+
+
+        <div className="mt-auto flex flex-col items-center gap-4">
+          <NotificationsBell
+            userId={currentUser?.id || ''}
+            onNavigate={handleNotificationClick}
+          />
           <button onClick={onViewProfile} className="p-3 text-slate-400 hover:text-orange-500 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl transition-colors">
             <User size={24} />
           </button>
@@ -199,11 +292,25 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ jobs, onSelect
       </div>
 
       <div className="flex-1 overflow-y-auto pb-28 sm:pb-8 h-[calc(100vh-64px)]">
+        {/* MOBILE HEADER REMOVED AS REQUESTED */}
+
+        {/* GLOBAL FIXED NOTIFICATION BELL (Mobile Only) */}
+        {['FEATURED', 'REQUESTS', 'MESSAGES', 'EXPLORE'].includes(currentView) && (
+          <div className="sm:hidden fixed top-4 right-4 z-50">
+            <NotificationsBell
+              userId={currentUser?.id || ''}
+              onNavigate={handleNotificationClick}
+            />
+          </div>
+        )}
+
         <AnimatePresence mode="wait">
 
           {/* VIEW: HISTORY (New List of Completed Jobs) */}
           {currentView === 'HISTORY' && (
             <div className="p-4 md:p-8 max-w-4xl mx-auto">
+              {/* Added padding top since header is gone */}
+              <div className="md:hidden h-4" />
               <h2 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white mb-6">{t.historyTab}</h2>
 
               {jobs.filter(j => j.status === 'COMPLETED' || j.status === 'CANCELLED').length === 0 ? (
@@ -217,7 +324,7 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ jobs, onSelect
                     <div key={job.id}
                       onClick={() => {
                         // Find proposal/chat to open details read-only
-                        const prop = proposals.find(p => p.jobId === job.id && p.status === 'CONFIRMED'); // or just open chat if exists
+                        const prop = proposals.find(p => p.jobId === job.id && p.status === 'ACCEPTED'); // or just open chat if exists
                         if (prop) onSelectProposal(prop);
                       }}
                       className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 flex justify-between items-center opacity-75 hover:opacity-100 transition-opacity cursor-pointer">
@@ -225,7 +332,25 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ jobs, onSelect
                         <h4 className="font-bold text-slate-900 dark:text-white line-through decoration-slate-300">{job.title}</h4>
                         <p className="text-xs text-slate-500">{new Date(job.finishedAt || job.createdAt).toLocaleDateString()} • {job.status}</p>
                       </div>
-                      <span className="font-bold text-slate-400">€{job.finalPrice}</span>
+                      <div className="flex flex-col items-end gap-2">
+                        <span className="font-bold text-slate-400">€{job.finalPrice}</span>
+                        <Button
+                          variant="outline"
+                          className="text-xs h-8 px-3 border-orange-200 text-orange-600 hover:bg-orange-50 hover:border-orange-500 dark:border-slate-700 dark:text-orange-400 dark:hover:bg-slate-800"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const prop = proposals.find(p => p.jobId === job.id && p.status === 'ACCEPTED');
+                            if (prop) {
+                              const proUser = users.find(u => u.id === prop.proId);
+                              if (proUser) {
+                                onHireAgain(proUser, job.category);
+                              }
+                            }
+                          }}
+                        >
+                          {t.hireAgain}
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -233,15 +358,24 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ jobs, onSelect
             </div>
           )}
 
+
+          {/* VIEW: MY ADS (NOW SPONSORED SHOWCASE) */}
+          {currentView === 'MY_ADS' && (
+            <SponsoredProsScreen />
+          )}
+
           {/* VIEW: MY REQUESTS (LIST) */}
           {currentView === 'REQUESTS' && (
             <motion.div
-              key="requests"
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 10 }}
-              className="p-4 md:p-8 max-w-5xl mx-auto"
+              {...({
+                key: "requests",
+                initial: { opacity: 0, x: -10 },
+                animate: { opacity: 1, x: 0 },
+                exit: { opacity: 0, x: 10 },
+                className: "p-4 md:p-8 max-w-5xl mx-auto"
+              } as any)}
             >
+              <div className="md:hidden h-4" />
               <div className="flex justify-between items-center mb-6 md:mb-8">
                 <div>
                   <h1 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white uppercase tracking-tighter">{t.myRequests}</h1>
@@ -249,6 +383,10 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ jobs, onSelect
                 </div>
                 <Button onClick={onCreateNew} className="hidden sm:flex items-center gap-2">
                   <Plus size={18} /> {t.createFirstRequest}
+                </Button>
+                {/* Mobile Create Button */}
+                <Button onClick={onCreateNew} className="sm:hidden flex items-center gap-2 text-xs px-3 h-8">
+                  <Plus size={14} /> New
                 </Button>
               </div>
 
@@ -329,11 +467,13 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ jobs, onSelect
           {/* VIEW: LIVE MARKET (For Specific Job) */}
           {currentView === 'MARKET' && liveMarketJob && (
             <motion.div
-              key="market"
-              initial={{ opacity: 0, x: 10 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -10 }}
-              className="p-4 md:p-8 max-w-5xl mx-auto"
+              {...({
+                key: "market",
+                initial: { opacity: 0, x: 10 },
+                animate: { opacity: 1, x: 0 },
+                exit: { opacity: 0, x: -10 },
+                className: "p-4 md:p-8 max-w-5xl mx-auto"
+              } as any)}
             >
               <div className="flex items-center gap-4 mb-6">
                 <button onClick={() => setCurrentView('REQUESTS')} className="p-2 bg-slate-100 dark:bg-slate-800 rounded-full text-slate-500"><ArrowLeft size={20} /></button>
@@ -362,7 +502,7 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ jobs, onSelect
                       <p className="text-sm text-slate-600 dark:text-slate-300 italic">"{bid.message}"</p>
 
                       {/* Accept Button Logic */}
-                      {bid.status === 'CONFIRMED' ? (
+                      {bid.status === 'ACCEPTED' ? (
                         <div className="bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 p-2 rounded-xl text-center font-bold text-sm flex items-center justify-center gap-2">
                           <Check size={16} /> Accepted
                         </div>
@@ -380,155 +520,90 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ jobs, onSelect
 
           {/* VIEW: EXPLORE (Social Discovery) */}
           {currentView === 'EXPLORE' && (
-            <motion.div
-              key="explore"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="p-4 md:p-8 max-w-5xl mx-auto"
-            >
-              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-                <div>
-                  <h1 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white uppercase tracking-tighter">Explore Pros</h1>
-                  <p className="text-slate-500 font-medium">Find and follow the best professionals.</p>
-                </div>
-                <div className="relative w-full md:w-auto">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-                  <input
-                    type="text"
-                    placeholder="Search name or @handle..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full md:w-80 pl-10 pr-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-orange-500 transition-colors"
-                  />
-                </div>
-              </div>
-
-              {/* My Public Profile Preview */}
-              <div className="mb-10 bg-gradient-to-r from-slate-900 to-slate-800 dark:from-white dark:to-slate-200 rounded-3xl p-6 md:p-8 text-white dark:text-slate-900 relative overflow-hidden group">
-                <div className="absolute right-0 top-0 w-64 h-64 bg-orange-500/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
-                <div className="relative z-10 flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="relative">
-                      <img src={currentUser?.avatar || MOCK_CLIENT.avatar} className="w-16 h-16 rounded-2xl border-2 border-white/20" />
-                      <div className="absolute -bottom-1 -right-1 bg-green-500 w-4 h-4 rounded-full border-2 border-slate-900" />
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-lg md:text-xl">{currentUser?.name || "My Name"}</h3>
-                      <p className="opacity-60 text-sm">{currentUser?.username || "@create.your.handle"}</p>
-                      <div className="flex items-center gap-3 mt-2 text-xs font-bold opacity-80">
-                        <span>{currentUser?.followers?.length || 0} Followers</span>
-                        <span>•</span>
-                        <span>{currentUser?.following?.length || 0} Following</span>
-                      </div>
-                    </div>
-                  </div>
-                  <Button onClick={() => currentUser && setViewingPro({ ...currentUser, role: 'CLIENT' })} variant="secondary" className="bg-white/10 hover:bg-white/20 text-white dark:bg-slate-900/10 dark:text-slate-900 border-none backdrop-blur-md">
-                    View Profile
-                  </Button>
-                </div>
-              </div>
-
-              {/* Pros Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {users
-                  .filter(u => u.role === 'PRO' && (
-                    (u.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-                    (u.username && u.username.toLowerCase().includes(searchQuery.toLowerCase()))
-                  ))
-                  .map(pro => (
-                    <div key={pro.id} className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-100 dark:border-slate-800 hover:shadow-xl hover:border-orange-500/20 transition-all group flex flex-col items-center text-center cursor-pointer" onClick={() => setViewingPro(pro)}>
-                      <div className="w-20 h-20 rounded-full p-[2px] bg-gradient-to-tr from-yellow-400 via-orange-500 to-red-500 mb-3 group-hover:scale-105 transition-transform">
-                        <img src={pro.avatar} className="w-full h-full rounded-full border-2 border-white dark:border-slate-900 object-cover" />
-                      </div>
-                      <h3 className="font-bold text-slate-900 dark:text-white leading-tight">{pro.name}</h3>
-                      <span className="text-xs text-slate-400 font-medium mb-3">{pro.username}</span>
-
-                      <div className="flex items-center gap-1 text-xs font-bold text-amber-500 mb-4 bg-amber-50 dark:bg-amber-900/10 px-2 py-1 rounded-full">
-                        <Star size={12} fill="currentColor" /> {pro.rating || 'New'}
-                      </div>
-
-                      <div className="mt-auto w-full flex gap-2">
-                        <button
-                          className="flex-1 py-2 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl text-xs font-bold hover:bg-orange-500 hover:text-white transition-colors"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setViewingPro(pro);
-                          }}
-                        >
-                          View Profile
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (!currentUser) return;
-                            if (currentUser?.following?.includes(pro.id)) {
-                              unfollowUser(currentUser.id, pro.id);
-                            } else {
-                              followUser(currentUser.id, pro.id);
-                            }
-                          }}
-                          className={`p-2 rounded-xl border ${currentUser?.following?.includes(pro.id) ? 'border-orange-500 text-orange-500 bg-orange-50' : 'border-slate-200 text-slate-400 hover:text-orange-500'}`}
-                        >
-                          {currentUser?.following?.includes(pro.id) ? <UserMinus size={16} /> : <UserPlus size={16} />}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            </motion.div>
+            <div className="h-full">
+              <ClientExploreView
+                currentUser={currentUser}
+                users={users}
+                onDirectRequest={onDirectRequest}
+                onViewProfile={(pro) => {
+                  setViewingPro(pro);
+                  setViewingPortfolio(null);
+                }}
+              />
+            </div>
           )}
 
           {/* VIEW: MESSAGES */}
           {currentView === 'MESSAGES' && (
-            <motion.div
-              key="messages"
-              initial={{ opacity: 0, x: 10 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -10 }}
-              className="p-4 md:p-8 max-w-4xl mx-auto"
-            >
-              <h2 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white mb-2">{t.messagesTab}</h2>
-              <div className="space-y-3 mt-6">
-                {myChats.filter(chat => {
-                  const j = jobs.find(job => job.id === chat.jobId);
-                  return j && j.status !== 'COMPLETED' && j.status !== 'CANCELLED';
-                }).length === 0 ? (
-                  <p className="text-slate-500">{t.noActiveRequests}</p>
-                ) : (
-                  myChats.filter(chat => {
-                    const j = jobs.find(job => job.id === chat.jobId);
-                    return j && j.status !== 'COMPLETED' && j.status !== 'CANCELLED';
-                  }).map((chat, i) => (
-                    <motion.div
+            <div className="h-full max-w-7xl mx-auto flex gap-6">
+              {/* Desktop: List is always visible. Mobile: List visible only if no chat selected (logic handled in App/Layout preferably but for now we do partial) */}
+              <div className={`w-full md:w-1/3 lg:w-1/4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col h-[calc(100vh-140px)]`}>
+                <div className="p-4 border-b border-slate-100 dark:border-slate-800">
+                  <h2 className="font-bold text-lg">{t.messagesTab}</h2>
+                </div>
+                <div className="flex-1 overflow-y-auto">
+                  {myChats.length === 0 && <p className="p-4 text-slate-500 text-sm">{t.noActiveRequests}</p>}
+                  {myChats.map(chat => (
+                    <div
                       key={chat.id}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.1 }}
                       onClick={() => onSelectProposal(chat)}
-                      className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 hover:shadow-lg hover:border-orange-500/30 transition-all cursor-pointer group flex gap-4"
+                      className={`p-4 border-b border-slate-50 dark:border-slate-800 cursor-pointer flex gap-3 transition-colors ${activeProposal?.id === chat.id ? 'bg-slate-100 dark:bg-slate-800' : 'hover:bg-slate-50 dark:hover:bg-slate-800'}`}
                     >
-                      <div className="relative shrink-0">
-                        <img src={chat.proAvatar} className="w-12 h-12 md:w-14 md:h-14 rounded-xl object-cover" />
-                      </div>
+                      <img src={chat.proAvatar} className="w-10 h-10 rounded-full object-cover" alt="Pro" />
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-bold text-slate-900 dark:text-white truncate">{chat.proName}</h3>
-                        <p className="text-sm text-slate-500 truncate">{chat.message}</p>
+                        <div className="flex justify-between items-center">
+                          <h4 className="font-bold text-sm truncate">{chat.proName}</h4>
+                          <span className="text-[10px] text-slate-400">{new Date(chat.createdAt).toLocaleDateString()}</span>
+                        </div>
+                        <p className="text-xs text-slate-500 truncate">{chat.message}</p>
                       </div>
-                    </motion.div>
-                  ))
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* CENTER COLUMN (MAIN STAGE) */}
+              {/* Mobile: Full Screen Overlay when active. Desktop: Side Panel. */}
+              <div className={`
+                  fixed inset-0 z-50 md:static md:z-auto bg-white dark:bg-slate-900 md:flex flex-1 md:bg-transparent
+                  transition-transform duration-300 transform
+                  ${activeProposal ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}
+              `}>
+                {activeProposal ? (
+                  <div className="h-full flex flex-col md:rounded-2xl md:overflow-hidden md:border border-slate-200 dark:border-slate-800 shadow-xl bg-white dark:bg-slate-900">
+                    {/* Back Button for Mobile is handled inside ChatScreen or we wrap it here */}
+                    {/* We pass onBack to ChatScreen. On Mobile it clears. On Desktop it also clears (closing the chat view) */}
+                    <ChatScreen
+                      proposal={activeProposal}
+                      onBack={() => onClearProposal && onClearProposal()}
+                      currentUserRole="CLIENT"
+                      onComplete={() => onClearProposal && onClearProposal()}
+                      onToggleFavorite={chatHandlers?.onToggleFavorite}
+                      onToggleBlock={chatHandlers?.onToggleBlock}
+                      isFavorited={chatHandlers?.isFavorited && chatHandlers.isFavorited(activeProposal.proId)}
+                      isBlocked={chatHandlers?.isBlocked && chatHandlers.isBlocked(activeProposal.proId)}
+                    />
+                  </div>
+                ) : (
+                  <div className="hidden md:flex flex-col items-center justify-center h-full bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 text-slate-400">
+                    <MessageSquare size={48} className="mb-4 opacity-50" />
+                    <p>Select a conversation to start chatting</p>
+                  </div>
                 )}
               </div>
-            </motion.div>
+            </div>
           )}
 
           {/* VIEW: HISTORY */}
           {currentView === 'HISTORY' && (
             <motion.div
-              key="history"
-              initial={{ opacity: 0, x: 10 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -10 }}
-              className="p-4 md:p-8 max-w-4xl mx-auto"
+              {...({
+                key: "history",
+                initial: { opacity: 0, x: 10 },
+                animate: { opacity: 1, x: 0 },
+                exit: { opacity: 0, x: -10 },
+                className: "p-4 md:p-8 max-w-4xl mx-auto"
+              } as any)}
             >
               <h2 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white mb-2">{t.historyTab}</h2>
               <div className="space-y-4 mt-6">
@@ -549,11 +624,13 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ jobs, onSelect
           {/* VIEW: FAVORITES */}
           {currentView === 'FAVORITES' && (
             <motion.div
-              key="favorites"
-              initial={{ opacity: 0, x: 10 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -10 }}
-              className="p-4 md:p-8 max-w-4xl mx-auto"
+              {...({
+                key: "favorites",
+                initial: { opacity: 0, x: 10 },
+                animate: { opacity: 1, x: 0 },
+                exit: { opacity: 0, x: -10 },
+                className: "p-4 md:p-8 max-w-4xl mx-auto"
+              } as any)}
             >
               <h2 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white mb-2">{t.favoritesTab}</h2>
               <p className="text-slate-500 mb-8">Your trusted professionals.</p>
@@ -581,6 +658,43 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ jobs, onSelect
             </motion.div>
           )}
 
+          {/* VIEW: FEATURED (Featured Professionals) - Unified with Desktop 'Featured Pros' */}
+          {currentView === 'FEATURED' && (
+            <SponsoredProsScreen />
+          )}
+
+          {/* VIEW: STORE (In-App Store) */}
+          {currentView === 'STORE' && (
+            <div className="h-full">
+              <StoreHome />
+            </div>
+          )}
+
+          {/* VIEW: MENU */}
+          {currentView === 'MENU' && currentUser && (
+            <ClientMenuScreen
+              user={currentUser}
+              darkMode={darkMode}
+              onToggleTheme={onToggleTheme}
+              onNavigate={(route) => {
+                if (route === '/store') {
+                  setCurrentView('STORE');
+                } else if (route === '/explore') {
+                  setCurrentView('EXPLORE');
+                } else if (route === '/history') {
+                  setCurrentView('HISTORY');
+                } else if (route === '/profile') {
+                  onViewProfile();
+                } else if (route === '/following') {
+                  setCurrentView('FAVORITES');
+                }
+              }}
+              onLogout={() => {
+                window.location.href = '/';
+              }}
+            />
+          )}
+
         </AnimatePresence>
 
         <AnimatePresence>
@@ -600,6 +714,10 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ jobs, onSelect
                 instagram_url: (viewingPro as UserType).instagram_url
               }}
               onClose={() => setViewingPro(null)}
+              onMessage={(user) => {
+                setViewingPro(null);
+                setCurrentView('MESSAGES');
+              }}
               onHire={() => {
                 // If it's a proposal, select it. If it's a user, we might need a different flow or just open chat request
                 if ((viewingPro as Proposal).jobId) {
@@ -628,34 +746,45 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ jobs, onSelect
             />
           )}
         </AnimatePresence>
-      </div>
+      </div >
 
-      {/* Mobile Navigation (Bottom) */}
-      <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-900 border-t dark:border-slate-800 p-2 flex justify-around z-30 pb-safe">
-        <button onClick={() => setCurrentView('REQUESTS')} className={`p-2 rounded-xl flex flex-col items-center ${currentView === 'REQUESTS' ? 'text-orange-500' : 'text-slate-400'}`}>
-          <FileText size={24} />
-          <span className="text-[10px] font-bold mt-1">Requests</span>
-        </button>
-        <button onClick={() => selectedJobForMarket ? setCurrentView('MARKET') : setCurrentView('REQUESTS')} className={`p-2 rounded-xl flex flex-col items-center ${currentView === 'MARKET' ? 'text-orange-500' : 'text-slate-400'}`}>
-          <LayoutDashboard size={24} />
-          <span className="text-[10px] font-bold mt-1">Market</span>
-        </button>
-        <button onClick={onCreateNew} className="p-4 bg-orange-500 text-white rounded-full -mt-8 shadow-lg shadow-orange-500/30">
-          <Plus size={24} />
-        </button>
-        <button onClick={() => setCurrentView('MESSAGES')} className={`p-2 rounded-xl flex flex-col items-center ${currentView === 'MESSAGES' ? 'text-orange-500' : 'text-slate-400'}`}>
-          <MessageSquare size={24} />
-          <span className="text-[10px] font-bold mt-1">Chat</span>
-        </button>
-        <button onClick={() => setCurrentView('HISTORY')} className={`p-2 rounded-xl flex flex-col items-center ${currentView === 'HISTORY' ? 'text-orange-500' : 'text-slate-400'}`}>
-          <History size={24} />
-          <span className="text-[10px] font-bold mt-1">History</span>
-        </button>
-        <button onClick={() => setCurrentView('EXPLORE')} className={`p-2 rounded-xl flex flex-col items-center ${currentView === 'EXPLORE' ? 'text-orange-500' : 'text-slate-400'}`}>
-          <Compass size={24} />
-          <span className="text-[10px] font-bold mt-1">Explore</span>
-        </button>
-      </div>
-    </div>
+      {/* Mobile Navigation */}
+      <BottomNavigation
+        activeTab={
+          currentView === 'EXPLORE' ? 'SEARCH' :
+            currentView === 'FAVORITES' ? 'FOLLOWING' :
+              currentView === 'REQUESTS' || currentView === 'MESSAGES' ? 'ACTIVITY' :
+                'PROFILE'
+        }
+        onTabChange={(id) => {
+          if (id === 'FEATURED') setCurrentView('FEATURED');
+          if (id === 'ORDERS') setCurrentView('REQUESTS');
+          if (id === 'NEW') onCreateNew();
+          if (id === 'MESSAGES') setCurrentView('MESSAGES');
+          if (id === 'MENU') setCurrentView('MENU');
+        }}
+      />
+
+      {/* REVIEW MODAL INTEGRATION */}
+      {
+        reviewJob && (
+          <ReviewModal
+            isOpen={!!reviewJob}
+            onClose={() => {
+              setDismissedReviews(prev => [...prev, reviewJob.id]);
+              setReviewJob(null);
+            }}
+            jobId={reviewJob.id}
+            proId={reviewJob.lockedBy || ''}
+            proName={users.find(u => u.id === reviewJob.lockedBy)?.name || 'Professional'}
+            onSuccess={() => {
+              // Success action handled by service (updates DB)
+              // We just close the modal, and the subscription will update the 'hasReview' field
+              setReviewJob(null);
+            }}
+          />
+        )
+      }
+    </div >
   );
 };

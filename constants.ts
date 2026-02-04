@@ -111,181 +111,216 @@ export const CATEGORIES: { id: Category; label: string; icon: string }[] = [
 
 export const MOCK_CLIENT: User = {
   id: 'client-1',
-  name: 'Alice',
-  surname: 'Johnson',
-  email: 'alice.j@email.lu',
-  phone: '+352 621 123 456',
-  avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Alice',
+  name: 'Sophie',
+  surname: 'Weber',
+  email: 'sophie.weber@email.lu',
+  phone: '+352 691 555 123',
+  avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sophie',
   role: 'CLIENT',
-  languages: ['EN', 'FR', 'LB'],
+  languages: ['LB', 'FR', 'DE', 'EN'],
   addresses: [
     {
-      id: 'addr-1',
+      id: 'addr-c1',
       label: 'Home',
-      street: 'Avenue de la Gare',
-      number: '42',
-      postalCode: 'L-1611',
-      locality: 'Luxembourg City',
-      floor: '3',
-      hasElevator: true,
-      easyParking: false,
+      street: 'Route de Longwy',
+      number: '8',
+      postalCode: 'L-8080',
+      locality: 'Bertrange',
+      country: 'Luxembourg',
+      floor: 'Ground',
+      hasElevator: false,
+      easyParking: true,
+      coordinates: { lat: 49.6116, lng: 6.052 }
     }
   ],
-  twoFactorEnabled: false,
+  twoFactorEnabled: true,
 };
 
 export const MOCK_PRO: User = {
   id: 'pro-1',
-  name: 'Roberto',
-  surname: 'Silva',
-  email: 'roberto.pro@servicebid.lu',
-  avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Roberto',
+  name: 'Jean-Pierre',
+  surname: 'Schmit',
+  email: 'jp.schmit@jps-lux.lu', // pro login
+  phone: '+352 621 888 999',
+  avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=JP',
   role: 'PRO',
   isVerified: true,
   level: 'Master',
-  xp: 4500,
-  rating: 4.9,
-  reviewsCount: 128,
-  joinedDate: '2021',
-  bio: 'Certified Master Electrician and EV Specialist with 10+ years of experience. Expert in residential solar systems.',
-  languages: ['PT', 'FR', 'EN'],
-  addresses: [],
+  xp: 12500,
+  rating: 4.95,
+  reviewsCount: 342,
+  joinedDate: '2019',
+  bio: 'Expert sanitär & chauffage pour toute installation et dépannage urgence 24/7. JPS Lux est votre partenaire de confiance depuis 10 ans.',
+  languages: ['LB', 'FR', 'DE', 'PT', 'EN'],
+  addresses: [
+    {
+      id: 'addr-p1',
+      label: 'Bureau / Atelier',
+      street: 'Rue de Hollerich',
+      number: '15',
+      postalCode: 'L-1741',
+      locality: 'Luxembourg',
+      country: 'Luxembourg',
+      coordinates: { lat: 49.6, lng: 6.13 }
+    }
+  ],
   // Smart Reply Config
   autoReplyConfig: {
-      enabled: true,
-      delay: 5, // 5 minutes
-      template: 'AGILITY'
+    enabled: true,
+    delay: 0,
+    template: 'AGILITY'
   },
   companyDetails: {
-    legalName: "Roberto Electric Solutions",
-    legalType: "independant",
-    vatNumber: "LU12345678",
-    rcsNumber: "A12345",
-    licenseNumber: "10023456/0",
-    licenseExpiry: "2026-12-31",
-    iban: "LU88 0011 2233 4455 66",
-    bankName: "BGL BNP Paribas",
-    plan: "Premium",
-    cardLast4: "4242",
-    cardBrand: "Visa"
-  }
+    legalName: "JPS Lux S.à r.l.",
+    legalType: "societe",
+    vatNumber: "LU25896314",
+    rcsNumber: "B123456",
+    licenseNumber: "10098765/1",
+    licenseExpiry: "2028-12-31",
+    iban: "LU88 1111 2222 3333 44",
+    bankName: "Spuerkeess (BCEE)",
+    plan: "Founder",
+    cardLast4: "9876",
+    cardBrand: "MasterCard"
+  },
+  services: [
+    { id: 'Plumbing', price: 90, unit: 'hour' },
+    { id: 'HVAC', price: 110, unit: 'hour' },
+    { id: 'SolarEnergy', price: 0, unit: 'project' } // Quote based
+  ]
 };
 
 export const MOCK_EMPLOYEE: User = {
-    id: 'staff-1',
-    name: 'Luigi',
-    surname: 'Rossi',
-    email: 'luigi.staff@servicebid.lu',
-    phone: '+352 691 998 877',
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Luigi',
-    role: 'EMPLOYEE',
-    companyId: 'pro-1', // Linked to Roberto
-    jobTitle: 'Senior Technician',
-    isActive: true,
-    languages: ['FR', 'EN'],
-    addresses: [],
-    // HR Data
-    nationality: 'Italian',
-    cnsNumber: '1985121200589',
-    idCardNumber: 'CA12345678',
-    birthDate: '1985-12-12',
-    isVerified: true
+  id: 'staff-1',
+  name: 'Marco',
+  surname: 'Ferreira',
+  email: 'marco.ferreira@jps-lux.lu',
+  phone: '+352 661 777 666',
+  avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Marco',
+  role: 'EMPLOYEE',
+  companyId: 'pro-1',
+  jobTitle: 'Installateur Qualifié',
+  isActive: true,
+  languages: ['PT', 'FR', 'LB'],
+  addresses: [],
+  // HR Data
+  nationality: 'Portuguese',
+  cnsNumber: '1990052012345',
+  idCardNumber: 'PT98765432',
+  birthDate: '1990-05-20',
+  isVerified: true,
+  level: 'Professional'
 };
 
 // Jobs including past jobs for analytics
 export const MOCK_JOBS: JobRequest[] = [
-  // Job pronto para testar o Workflow (A caminho / Iniciar Serviço)
+  // Active Job: Waiting for Client Confirmation
   {
-    id: 'job-confirmed-1',
+    id: 'job-active-1',
     clientId: 'client-1',
-    category: 'Electrician',
-    description: 'Urgent: Power outage in the kitchen.',
-    photos: [],
+    assignedTo: 'pro-1', // Assigned to JP
+    category: 'Plumbing',
+    title: 'Fuite d\'eau salle de bain', // Added title
+    description: 'Urgent: Fuite importante sous le lavabo, risque d\'inondation.',
+    photos: ['https://images.unsplash.com/photo-1585704032915-c3400ca199e7?auto=format&fit=crop&q=80&w=400'],
     urgency: 'URGENT',
-    suggestedPrice: 200,
-    finalPrice: 220,
-    status: 'CONFIRMED',
-    createdAt: '1 hour ago',
-    location: 'Route d\'Esch, Luxembourg',
-    distance: '3.2 km'
-  },
-  {
-    id: 'job-1',
-    clientId: 'client-99',
-    category: 'Electrician',
-    description: 'Need to replace a circuit breaker that keeps tripping. Also check 2 outlets.',
-    photos: ['https://picsum.photos/400/300?random=10'],
-    urgency: 'THIS_WEEK',
     suggestedPrice: 150,
-    status: 'OPEN',
-    createdAt: '10 mins ago',
-    location: 'Luxembourg City, Avenue de la Gare',
-    distance: '2.5 km',
+    finalPrice: 0,
+    status: 'IN_PROGRESS',
+    createdAt: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
+    location: '8, Route de Longwy, Bertrange',
+    distance: '4.2 km',
+    clientName: "Sophie Weber", // Denormalized for simpler display
+    clientAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sophie'
   },
-  // Past jobs for analytics
+  // Past Jobs
   {
     id: 'job-old-1',
-    clientId: 'client-55',
-    category: 'Electrician',
-    description: 'Install EV Charger',
+    clientId: 'client-1',
+    assignedTo: 'pro-1',
+    category: 'HVAC',
+    title: 'Entretien Chaudière',
+    description: 'Entretien annuel chaudière gaz.',
     photos: [],
-    urgency: 'URGENT',
-    suggestedPrice: 850,
-    finalPrice: 900,
+    urgency: 'PLANNING',
+    suggestedPrice: 220,
+    finalPrice: 220,
     status: 'COMPLETED',
-    createdAt: new Date(Date.now() - 86400000).toISOString(), // Yesterday
-    finishedAt: new Date(Date.now() - 82800000).toISOString(),
-    location: 'Kirchberg',
-    distance: '5 km'
+    createdAt: new Date(Date.now() - 604800000).toISOString(), // 7 days ago
+    finishedAt: new Date(Date.now() - 504800000).toISOString(),
+    location: 'Bertrange',
+    distance: '4.2 km',
+    clientName: "Sophie Weber",
+    clientAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sophie',
+    reviewId: 'r1'
   },
   {
     id: 'job-old-2',
-    clientId: 'client-56',
-    category: 'SolarEnergy',
-    description: 'Solar Panel Maintenance',
-    photos: [],
-    urgency: 'PLANNING',
-    suggestedPrice: 200,
-    finalPrice: 200,
-    status: 'COMPLETED',
-    createdAt: new Date(Date.now() - 172800000).toISOString(), // 2 days ago
-    finishedAt: new Date(Date.now() - 169200000).toISOString(),
-    location: 'Bertrange',
-    distance: '8 km'
-  },
-  {
-    id: 'job-old-3',
-    clientId: 'client-57',
-    category: 'Electrician',
-    description: 'Kitchen Rewiring',
+    clientId: 'client-99',
+    assignedTo: 'pro-1',
+    category: 'Plumbing',
+    title: 'Installation WC',
+    description: 'Nouveau WC suspendu Geberit.',
     photos: [],
     urgency: 'THIS_WEEK',
-    suggestedPrice: 1200,
-    finalPrice: 1250,
+    suggestedPrice: 450,
+    finalPrice: 500,
     status: 'COMPLETED',
-    createdAt: new Date(Date.now() - 604800000).toISOString(), // 1 week ago
-    finishedAt: new Date(Date.now() - 601200000).toISOString(),
-    location: 'Esch-sur-Alzette',
-    distance: '15 km'
+    createdAt: new Date(Date.now() - 1209600000).toISOString(), // 14 days ago
+    finishedAt: new Date(Date.now() - 1109600000).toISOString(),
+    location: 'Luxembourg Gare',
+    distance: '1.5 km',
+    clientName: "Marc T.",
+    clientAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Marc'
   }
 ];
 
 export const MOCK_PROPOSALS: Proposal[] = [
   {
     id: 'prop-1',
-    jobId: 'job-new',
-    proId: 'pro-2',
-    proName: 'Carlos M.',
-    proAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Carlos',
-    proLevel: 'Expert',
-    proRating: 4.8,
-    price: 180,
-    message: 'I can be there in 30 mins. Includes parts.',
-    distance: '1.2 km',
-    createdAt: '2 mins ago',
+    jobId: 'job-active-1',
+    proId: 'pro-1',
+    proName: 'JPS Lux S.à r.l.',
+    proAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=JP',
+    proLevel: 'Master',
+    proRating: 4.95,
+    price: 150,
+    message: 'Bonjour Sophie, nous avons une équipe disponible dans 30 minutes pour votre fuite.',
+    distance: '4.2 km',
+    createdAt: new Date(Date.now() - 3000000).toISOString(), // 50 mins ago
+    status: 'ACCEPTED'
   }
 ];
 
 export const MOCK_REVIEWS: Review[] = [
-  { id: 'r1', service: 'Full House Rewiring', price: 1200, rating: 5, comment: 'Exceptional work, very clean.', date: 'Yesterday' },
+  {
+    id: 'r1',
+    jobId: 'job-old-1',
+    clientId: 'client-1',
+    clientName: 'Sophie W.',
+    proId: 'pro-1',
+    service: 'HVAC',
+    price: 220,
+    rating: 5,
+    comment: 'Service impeccable, très propre et ponctuel. Je recommande vivement JP.',
+    date: 'Il y a 1 semaine'
+  },
+  {
+    id: 'r2',
+    jobId: 'job-old-2',
+    clientId: 'client-99',
+    clientName: 'Marc T.',
+    proId: 'pro-1',
+    service: 'Plumbing',
+    price: 500,
+    rating: 5,
+    comment: 'Travail pro.',
+    date: 'Il y a 2 semaines'
+  }
+];
+
+export const MOCK_TRANSACTIONS: any[] = [
+  { id: 'tx1', date: '2023-10-01', amount: 220, description: 'Intervention Chaudière - Sophie W.', status: 'PAID', type: 'INCOME' },
+  { id: 'tx2', date: '2023-10-05', amount: 500, description: 'Installation WC - Marc T.', status: 'PAID', type: 'INCOME' },
+  { id: 'tx3', date: '2023-10-10', amount: -150, description: 'Achat Matériel - Facq', status: 'PAID', type: 'EXPENSE' }
 ];

@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../src/lib/firebase';
-import { useAuth } from './AuthContext';
+import { useAuth } from '@/contexts/AuthContext';
 
 export type NotificationType = 'success' | 'error' | 'info' | 'warning';
 
@@ -74,13 +74,13 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
                     <div
                         key={note.id}
                         className={`pointer-events-auto p-4 rounded-xl shadow-2xl border flex items-center gap-3 min-w-[300px] animate-in slide-in-from-right-10 fade-in duration-300 ${note.type === 'success' ? 'bg-white border-green-200 text-green-800' :
-                                note.type === 'error' ? 'bg-white border-red-200 text-red-800' :
-                                    'bg-white border-slate-200 text-slate-800'
+                            note.type === 'error' ? 'bg-white border-red-200 text-red-800' :
+                                'bg-white border-slate-200 text-slate-800'
                             }`}
                     >
                         <div className={`w-2 h-2 rounded-full ${note.type === 'success' ? 'bg-green-500' :
-                                note.type === 'error' ? 'bg-red-500' :
-                                    'bg-blue-500'
+                            note.type === 'error' ? 'bg-red-500' :
+                                'bg-blue-500'
                             }`} />
                         <div className="flex-1">
                             <p className="font-bold text-sm">{note.message}</p>

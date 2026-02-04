@@ -1,91 +1,119 @@
 
-import { Invoice, CompanyDetails, User, JobRequest } from '../types';
+import { Invoice } from '../types';
 
-// Helper to calculate invoice totals
-export const calculateInvoiceTotals = (price: number, vatRate: number = 17) => {
-  // Assuming the price agreed in chat is TTC (Total Including Tax) for B2C simplicity
-  // Or HT (Excluding Tax) depending on platform logic. 
-  // Let's assume price is HT for B2B standard, but B2C usually talks TTC.
-  // For this generator, we treat the input price as TTC to extract VAT.
-  
-  const priceTTC = price;
-  const priceHT = priceTTC / (1 + vatRate / 100);
-  const vatAmount = priceTTC - priceHT;
+export const downloadInvoicePDF = (invoice: Invoice) => {
+  // Create a printable window
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) return;
 
-  return {
-    subtotalHT: parseFloat(priceHT.toFixed(2)),
-    totalVAT: parseFloat(vatAmount.toFixed(2)),
-    totalTTC: parseFloat(priceTTC.toFixed(2))
-  };
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>Invoice #${invoice.id}</title>
+        <style>
+          body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 40px; color: #333; }
+          .header { display: flex; justify-content: space-between; margin-bottom: 40px; }
+          .logo { font-size: 24px; font-weight: bold; color: #f97316; }
+          .invoice-title { font-size: 32px; font-weight: bold; color: #333; }
+          .details { margin-bottom: 40px; }
+          .table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+          .table th { text-align: left; border-bottom: 2px solid #eee; padding: 10px 0; color: #888; font-size: 12px; text-transform: uppercase; }
+          .table td { padding: 15px 0; border-bottom: 1px solid #eee; }
+          .total-section { text-align: right; }
+          .total-row { font-size: 14px; margin-bottom: 5px; color: #666; }
+          .final-total { font-size: 24px; font-weight: bold; margin-top: 10px; color: #f97316; }
+          .footer { margin-top: 60px; text-align: center; color: #999; font-size: 12px; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div class="logo">ZOLVER</div>
+          <div class="invoice-title">INVOICE</div>
+        </div>
+
+        <div class="details">
+          <p><strong>Date:</strong> ${new Date(invoice.date).toLocaleDateString()}</p>
+          <p><strong>Invoice #:</strong> ${invoice.id}</p>
+          <p><strong>Billed To:</strong> ${invoice.client.name}</p>
+          <p><strong>Service Provider:</strong> ${invoice.issuer.legalName}</p>
+        </div>
+
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Description</th>
+              <th>Qty</th>
+              <th>Price</th>
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${invoice.items.map(item => `
+              <tr>
+                <td>${item.description}</td>
+                <td>${item.quantity}</td>
+                <td>€ ${item.unitPrice.toFixed(2)}</td>
+                <td>€ ${item.total.toFixed(2)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+
+        <div class="total-section">
+          <div class="total-row">Subtotal: € ${invoice.subtotalHT.toFixed(2)}</div>
+          <div class="total-row">VAT (17%): € ${invoice.totalVAT.toFixed(2)}</div>
+          <div class="final-total">Total: € ${invoice.totalTTC.toFixed(2)}</div>
+        </div>
+
+        <div class="footer">
+          <p>Thank you for using Zolver!</p>
+          <p>Payment Method: ${invoice.paymentMethod || 'N/A'}</p>
+        </div>
+      </body>
+    </html>
+  `;
+
+  printWindow.document.write(html);
+  printWindow.document.close();
+  printWindow.focus();
+
+  // Wait for content to load then print
+  setTimeout(() => {
+    printWindow.print();
+    printWindow.close();
+  }, 500);
 };
 
-export const generateInvoiceNumber = (jobId: string) => {
-  const year = new Date().getFullYear();
-  // Mock logic: generate a sequential-looking number based on timestamp
-  const sequence = Date.now().toString().slice(-4);
-  return `${year}-${sequence}`;
-};
-
-export const createInvoiceObject = (
-  pro: User, 
-  clientName: string, // In real app, would be Client User object
-  job: JobRequest, 
-  amount: number
-): Invoice => {
-  const totals = calculateInvoiceTotals(amount);
-  
-  // Default Company Details if missing (Safety fallback)
-  const companyInfo: CompanyDetails = pro.companyDetails || {
-    legalName: pro.name + " " + (pro.surname || ""),
-    legalType: "independant",
-    vatNumber: "LU99999999 (Simulated)",
-    licenseNumber: "N/A",
-    licenseExpiry: "",
-    iban: "",
-    rcsNumber: ""
-  };
-
+export const createInvoiceObject = (pro: any, clientName: string, job: any, price: number): Invoice => {
   return {
-    id: generateInvoiceNumber(job.id),
+    id: `INV-${new Date().getFullYear()}-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`,
     date: new Date().toISOString(),
-    dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(), // +14 days
-    issuer: {
-      ...companyInfo,
-      address: pro.addresses[0] ? `${pro.addresses[0].street} ${pro.addresses[0].number}, ${pro.addresses[0].postalCode} ${pro.addresses[0].locality}` : "Luxembourg"
+    dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    issuer: pro.companyDetails || {
+      legalName: pro.name,
+      legalType: 'independant',
+      vatNumber: 'N/A',
+      address: 'Luxembourg',
+      licenseNumber: 'N/A', // Added missing required props
+      licenseExpiry: 'N/A',
+      iban: 'N/A'
     },
     client: {
       name: clientName,
-      address: job.location // Using job location as client address for now
+      address: job.location?.locality || (typeof job.location === 'string' ? job.location : "Luxembourg"),
     },
-    items: [
-      {
-        description: job.title || `Service: ${job.category}`,
-        quantity: 1,
-        unitPrice: totals.subtotalHT,
-        vatRate: 17,
-        total: totals.subtotalHT
-      }
-    ],
-    subtotalHT: totals.subtotalHT,
-    totalVAT: totals.totalVAT,
-    totalTTC: totals.totalTTC,
+    items: [{
+      description: job.title,
+      quantity: 1,
+      unitPrice: price,
+      vatRate: 17,
+      total: price
+    }],
+    subtotalHT: price / 1.17,
+    totalVAT: price * (1 - 1 / 1.17),
+    totalTTC: price,
     status: 'PENDING',
-    language: 'FR', // Default legal language
-    paymentMethod: job.paymentMethod || 'CASH'
+    language: 'EN'
   };
 };
-
-// Mock function to simulate PDF generation download
-export const downloadInvoicePDF = (invoice: Invoice) => {
-  console.log("Generating PDF for:", invoice);
-  
-  const paymentLabel = invoice.paymentMethod === 'CARD' ? 'Carte Bancaire' 
-                     : invoice.paymentMethod === 'TRANSFER' ? 'Virement Bancaire' 
-                     : 'Espèces';
-
-  alert(`📥 Downloading PDF Invoice N° ${invoice.id}\n\nIssuer: ${invoice.issuer.legalName}\nClient: ${invoice.client.name}\nAmount: €${invoice.totalTTC}\nMethod: ${paymentLabel}`);
-};
-
-export const downloadFiscalReport = (year: number) => {
-    alert(`📥 Downloading Fiscal Report (Year ${year})\n\nFormat: CSV & PDF\nIncludes all transactions, VAT collected, and platform fees for your accountant.`);
-}

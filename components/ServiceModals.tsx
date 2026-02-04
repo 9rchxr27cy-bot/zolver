@@ -6,12 +6,15 @@ import {
   UserPlus, UserMinus, Grid, ShieldCheck, CheckCircle2, Briefcase, Award, Quote, ExternalLink, Languages,
   CreditCard, History, User as UserIcon, Download, FileText, MessageSquare // Added User icon for bio section
 } from 'lucide-react';
+import * as LucideIcons from 'lucide-react'; // For dynamic icons
 import { Button, LevelBadge, Card } from './ui';
-import { User, Review, Proposal } from '../types';
+import { User, Review, Proposal, Role } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useDatabase } from '../contexts/DatabaseContext';
-import { MOCK_PRO, MOCK_REVIEWS, MOCK_CLIENT } from '../constants';
+import { MOCK_PRO, MOCK_REVIEWS, MOCK_CLIENT, CATEGORIES as ALL_CATEGORIES } from '../constants';
 import { InstaPortfolio } from './InstaPortfolio';
+import { collection, query, onSnapshot, doc } from 'firebase/firestore';
+import { db } from '../src/lib/firebase';
 
 interface PortfolioOverlayProps {
   proposal: Proposal;
@@ -24,17 +27,21 @@ export const PortfolioOverlay: React.FC<PortfolioOverlayProps> = ({ proposal, on
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 sm:p-6">
       <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        onClick={onClose}
-        className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm"
+        {...({
+          initial: { opacity: 0 },
+          animate: { opacity: 1 },
+          exit: { opacity: 0 },
+          onClick: onClose,
+          className: "absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+        } as any)}
       />
       <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        className="relative w-full max-w-4xl bg-white dark:bg-slate-950 rounded-[2rem] shadow-2xl overflow-hidden max-h-[90vh] flex flex-col z-[90]"
+        {...({
+          initial: { opacity: 0, scale: 0.95, y: 20 },
+          animate: { opacity: 1, scale: 1, y: 0 },
+          exit: { opacity: 0, scale: 0.95, y: 20 },
+          className: "relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl shadow-2xl overflow-hidden mx-4 max-h-[90vh] flex flex-col z-[90]"
+        } as any)}
       >
         <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-white dark:bg-slate-900 sticky top-0 z-10">
           <div className="flex items-center gap-3">
@@ -67,29 +74,40 @@ export const ServiceSelectionModal: React.FC<{
   onClose: () => void;
 }> = ({ pro, onSelect, onClose }) => {
   // Using constant categories for now as fallback
-  const CATEGORIES = [
-    { id: 'cleaning', label: 'Limpeza', icon: '🧹' },
-    { id: 'moving', label: 'Mudanças', icon: '📦' },
-    { id: 'painting', label: 'Pintura', icon: '🎨' },
-    { id: 'plumbing', label: 'Canalização', icon: '🔧' },
-    { id: 'electricity', label: 'Eletricidade', icon: '⚡' },
-    { id: 'gardening', label: 'Jardinagem', icon: '🌿' }
+  const FALLBACK_CATEGORIES = [
+    { id: 'Cleaning', label: 'Limpeza', icon: 'Sparkles' },
+    { id: 'Moving', label: 'Mudanças', icon: 'Truck' },
+    { id: 'Painting', label: 'Pintura', icon: 'Paintbrush' },
+    { id: 'Plumbing', label: 'Canalização', icon: 'Droplets' },
+    { id: 'Electricity', label: 'Eletricidade', icon: 'Zap' },
+    { id: 'Gardening', label: 'Jardinagem', icon: 'Flower2' }
   ];
+
+  const displayedCategories = React.useMemo(() => {
+    if (pro.services && pro.services.length > 0) {
+      return pro.services.map(s => ALL_CATEGORIES.find(c => c.id === s.id)).filter(Boolean) as typeof ALL_CATEGORIES;
+    }
+    return FALLBACK_CATEGORIES; // Fallback if no services defined
+  }, [pro]);
 
   return (
     <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-      onClick={onClose}
+      {...({
+        initial: { opacity: 0 },
+        animate: { opacity: 1 },
+        exit: { opacity: 0 },
+        className: "fixed inset-0 bg-slate-900/40 backdrop-blur-[2px] z-40 flex items-center justify-center p-4",
+        onClick: onClose
+      } as any)}
     >
       <motion.div
-        initial={{ scale: 0.95, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.95, opacity: 0 }}
-        className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-md overflow-hidden relative shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
+        {...({
+          initial: { scale: 0.9, opacity: 0 },
+          animate: { scale: 1, opacity: 1 },
+          exit: { scale: 0.9, opacity: 0 },
+          className: "bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800 pointer-events-auto max-w-md w-full",
+          onClick: (e: any) => e.stopPropagation()
+        } as any)}
       >
         <button
           onClick={onClose}
@@ -112,16 +130,23 @@ export const ServiceSelectionModal: React.FC<{
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            {CATEGORIES.map((cat) => (
-              <button
-                key={cat.id}
-                onClick={() => onSelect(cat.id)}
-                className="flex flex-col items-center justify-center p-4 rounded-xl bg-gray-50 dark:bg-white/5 hover:bg-orange-50 dark:hover:bg-orange-900/20 border-2 border-transparent hover:border-orange-500 transition-all group"
-              >
-                <span className="text-2xl mb-2 group-hover:scale-110 transition-transform">{cat.icon}</span>
-                <span className="font-medium text-gray-700 dark:text-gray-200">{cat.label}</span>
-              </button>
-            ))}
+            {displayedCategories.map((cat) => {
+              // Dynamic Icon Logic
+              const IconComponent = (LucideIcons as any)[cat.icon] || LucideIcons.HelpCircle;
+
+              return (
+                <button
+                  key={cat.id}
+                  onClick={() => onSelect(cat.id)}
+                  className="flex flex-col items-center justify-center p-4 rounded-xl bg-gray-50 dark:bg-white/5 hover:bg-orange-50 dark:hover:bg-orange-900/20 border-2 border-transparent hover:border-orange-500 transition-all group"
+                >
+                  <span className="mb-2 group-hover:scale-110 transition-transform text-orange-500">
+                    <IconComponent size={24} />
+                  </span>
+                  <span className="font-medium text-gray-700 dark:text-gray-200 text-sm">{cat.label}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
       </motion.div>
@@ -134,7 +159,7 @@ interface UserProfileModalProps {
     id: string;
     name: string;
     avatar: string;
-    role: 'CLIENT' | 'PRO' | 'EMPLOYEE';
+    role: Role | string;
     // Optional Pro/Staff fields
     level?: string;
     rating?: number;
@@ -145,6 +170,12 @@ interface UserProfileModalProps {
     // Business Hours
     openingTime?: string;
     closingTime?: string;
+    // New social fields
+    username?: string;
+    followers?: string[];
+    following?: string[];
+    instagram_url?: string;
+    bio?: string;
   };
   onClose: () => void;
   // Pro Actions
@@ -157,6 +188,7 @@ interface UserProfileModalProps {
   isFavorited?: boolean;
   isBlocked?: boolean;
   onDirectRequest?: (pro: User) => void;
+  onMessage?: (user: User) => void;
 }
 
 interface ProviderProfileViewProps {
@@ -166,6 +198,7 @@ interface ProviderProfileViewProps {
   isFollowing?: boolean;
   onToggleFollow?: () => void;
   onDirectRequest?: (pro: User) => void;
+  onMessage?: (user: User) => void;
 }
 
 // --- SUB-COMPONENTS FOR CLEAN ARCHITECTURE ---
@@ -264,7 +297,7 @@ const EmployeeProfileView: React.FC<{ user: UserProfileModalProps['user'] }> = (
 
   // Stats specifically for this employee
   // Note: We need to safely access jobs, assuming useDatabase provides it.
-  const jobsCompleted = jobs ? jobs.filter(j => j.assignedTo === user.id && j.status === 'COMPLETED').length : 0;
+  const jobsCompleted = jobs ? jobs.filter(j => j.assignedEmployeeId === user.id && j.status === 'COMPLETED').length : 0;
   const languages = user.languages || ['FR', 'EN']; // Fallback
 
   return (
@@ -367,20 +400,21 @@ const EmployeeProfileView: React.FC<{ user: UserProfileModalProps['user'] }> = (
   );
 };
 
-const ProviderProfileView: React.FC<ProviderProfileViewProps> = ({
+export const ProviderProfileView: React.FC<ProviderProfileViewProps> = ({
   user,
   onViewPortfolio,
   onHire,
   onToggleFollow,
   isFollowing,
-  onDirectRequest
+  onDirectRequest,
+  onMessage
 }) => {
   const { t } = useLanguage();
 
   // Safe access to properties with defaults
   const closingTime = user.closingTime || '18:00';
   const openingTime = user.openingTime || '09:00';
-  const websiteUrl = `https://servicebid.lu/${user.name.toLowerCase().replace(/\s+/g, '-')}`;
+  const websiteUrl = `https://servicebid.lu/${(user.name || '').toLowerCase().replace(/\s+/g, '-')}`;
 
   // Use user.followers if available, else 0
   const followersCount = (user as any).followers?.length || 0;
@@ -402,7 +436,7 @@ const ProviderProfileView: React.FC<ProviderProfileViewProps> = ({
         </div>
         <h3 className="text-2xl font-black mt-4 text-slate-900 dark:text-white text-center">{user.name}</h3>
         {(user as any).username && (
-          <span className="text-slate-400 font-medium text-sm">@{(user as any).username.replace('@', '')}</span>
+          <span className="text-slate-400 font-medium text-sm">@{((user as any).username || '').replace('@', '')}</span>
         )}
 
         {/* Action Buttons */}
@@ -439,10 +473,16 @@ const ProviderProfileView: React.FC<ProviderProfileViewProps> = ({
             </Button>
           )}
 
-          {/* Message Button (New) */}
-          <Button variant="ghost" className="text-slate-500 hover:text-slate-900 dark:hover:text-white" onClick={() => alert("Chat feature coming soon for profiles!")}>
-            <MessageSquare size={20} />
-          </Button>
+          {/* Message Button */}
+          {onMessage && (
+            <Button
+              variant="ghost"
+              className="text-slate-500 hover:text-slate-900 dark:hover:text-white"
+              onClick={() => onMessage(user)}
+            >
+              <MessageSquare size={20} />
+            </Button>
+          )}
         </div>
 
         <div className="flex items-center gap-2 mt-4">
@@ -600,55 +640,69 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   onToggleBlock,
   isFavorited = false,
   isBlocked = false,
-  onDirectRequest
+  onDirectRequest,
+  onMessage
 }) => {
   const { t } = useLanguage();
   const { followUser, unfollowUser } = useDatabase();
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [isFollowing, setIsFollowing] = useState(false);
 
   useEffect(() => {
-    const stored = localStorage.getItem('currentUser');
+    // Attempt to get user from robust session storage first
+    const stored = localStorage.getItem('servicebid_current_session_user') || localStorage.getItem('currentUser');
     if (stored) {
-      setCurrentUser(JSON.parse(stored));
+      try {
+        const u = JSON.parse(stored);
+        setCurrentUserId(u.id || u.uid);
+      } catch (e) {
+        console.error("Error parsing current user", e);
+      }
     }
   }, []);
 
-  const isFollowing = currentUser?.following?.includes(user.id);
+  // Real-time Follow Status Check
+  useEffect(() => {
+    if (!currentUserId || !user.id) return;
+
+    const followId = `${currentUserId}_${user.id}`;
+    const unsub = onSnapshot(doc(db, 'follows', followId), (docSnap) => {
+      setIsFollowing(docSnap.exists());
+    });
+
+    return () => unsub();
+  }, [currentUserId, user.id]);
 
   const handleToggleFollow = async () => {
-    if (!currentUser) return;
+    if (!currentUserId) return;
     if (isFollowing) {
-      await unfollowUser(currentUser.id, user.id);
-      // Optimistic or refresh? Context updates should reflect if we were using it for currentUser
-      // But since we use local state for currentUser parsing, we might need to manually update it or refetch
-      // For now, let's rely on re-renders if context updates active user, but local storage doesn't auto-update.
-      // Better: Update local state
-      const newFollowing = currentUser.following.filter((id: string) => id !== user.id);
-      setCurrentUser({ ...currentUser, following: newFollowing });
+      await unfollowUser(currentUserId, user.id);
     } else {
-      await followUser(currentUser.id, user.id);
-      const newFollowing = [...(currentUser.following || []), user.id];
-      setCurrentUser({ ...currentUser, following: newFollowing });
+      await followUser(currentUserId, user.id);
     }
   };
 
   return (
     <div className="fixed inset-0 z-[60] flex justify-end overflow-hidden">
       <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        onClick={onClose}
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+        {...({
+          initial: { opacity: 0 },
+          animate: { opacity: 1 },
+          exit: { opacity: 0 },
+          onClick: onClose,
+          className: "absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+        } as any)}
       />
 
       {/* DRAWER CONTAINER */}
       <motion.div
-        initial={{ x: '100%' }}
-        animate={{ x: 0 }}
-        exit={{ x: '100%' }}
-        transition={{ type: "spring", damping: 25, stiffness: 200 }}
-        className="relative w-full max-w-md bg-white dark:bg-slate-950 shadow-2xl h-full flex flex-col z-[70] border-l border-slate-200 dark:border-slate-800"
+        {...({
+          initial: { x: "100%" },
+          animate: { x: 0 },
+          exit: { x: "100%" },
+          transition: { type: "spring", damping: 25, stiffness: 200 },
+          className: "absolute right-0 top-0 bottom-0 w-full max-w-md bg-white dark:bg-slate-900 shadow-2xl flex flex-col z-50 border-l border-slate-200 dark:border-slate-800"
+        } as any)}
       >
         {/* Drawer Header */}
         <div className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 p-4 flex items-center gap-4 shrink-0">
@@ -675,6 +729,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
               isFollowing={isFollowing}
               onToggleFollow={handleToggleFollow}
               onDirectRequest={onDirectRequest}
+              onMessage={onMessage}
             />
           )}
 
@@ -745,17 +800,21 @@ export const InvoiceViewModal: React.FC<InvoiceViewModalProps> = ({ transaction,
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        onClick={onClose}
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        {...({
+          initial: { opacity: 0 },
+          animate: { opacity: 1 },
+          exit: { opacity: 0 },
+          onClick: onClose,
+          className: "absolute inset-0 bg-black/60 backdrop-blur-sm"
+        } as any)}
       />
       <motion.div
-        initial={{ opacity: 0, scale: 0.9, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.9, y: 20 }}
-        className="relative bg-white dark:bg-slate-900 w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden z-[70] flex flex-col max-h-[90vh]"
+        {...({
+          initial: { opacity: 0, scale: 0.9, y: 20 },
+          animate: { opacity: 1, scale: 1, y: 0 },
+          exit: { opacity: 0, scale: 0.9, y: 20 },
+          className: "relative bg-white dark:bg-slate-900 w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden z-[70] flex flex-col max-h-[90vh]"
+        } as any)}
       >
         {/* Header */}
         <div className="bg-slate-900 text-white p-6 flex justify-between items-start">

@@ -1,16 +1,23 @@
 
 import React, { useState, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Layout } from './components/Layout';
-import { WelcomeScreen, ProOnboarding, CompanyCreationScreen, LoginModal } from './screens/AuthScreens';
+import { DashboardLayout } from './components/DashboardLayout';
+import { WelcomeScreen, ProOnboarding, CompanyCreationScreen, LoginModal, ClientSignupModal, ForgotPasswordModal } from './screens/AuthScreens';
 import { LandingScreen } from './screens/LandingScreen';
 import { WizardScreen } from './screens/WizardScreen';
-import { ClientDashboard } from './screens/ClientScreens';
+import { ClientDashboard, DashboardView } from './screens/ClientScreens'; // Updated import
 import { ProDashboard } from './screens/ProScreens';
 import { StaffDashboard } from './screens/StaffScreens';
 import { ChatScreen } from './screens/ChatScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
+import { AdminDashboard } from './screens/AdminDashboard'; // Import Admin
 import { AllServicesScreen } from './screens/AllServicesScreen';
+import { StoreHome } from './screens/store/StoreHome';
+import { ProPublicProfile } from './screens/public/ProPublicProfile';
+import { CartDrawer } from './screens/store/CartDrawer';
+import { CartProvider } from './contexts/CartContext';
 import { User, Proposal, JobRequest } from './types';
 import { MOCK_CLIENT, MOCK_PRO, MOCK_EMPLOYEE } from './constants';
 import { LanguageProvider } from './contexts/LanguageContext';
@@ -18,17 +25,48 @@ import { UserProfileModal, PortfolioOverlay, ServiceSelectionModal } from './com
 import { useDatabase } from './contexts/DatabaseContext';
 import { NotificationProvider } from './contexts/NotificationContext';
 import { DatabaseProvider } from './contexts/DatabaseContext';
+import { useAuth, AuthProvider } from './contexts/AuthContext';
+import { RequestDraftProvider, useRequestDraft } from './contexts/RequestDraftContext';
+import { sendNewOrderEmail } from './services/emailService';
+import { TermsScreen } from './screens/legal/TermsScreen';
+import { PrivacyScreen } from './screens/legal/PrivacyScreen';
+
+const LoadingScreen: React.FC = () => (
+  <div className="fixed inset-0 bg-white dark:bg-slate-950 z-[9999] flex flex-col items-center justify-center">
+    <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full mb-4 relative">
+      <motion.div
+        animate={{ rotate: 360 }}
+        transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+        style={{
+          position: 'absolute',
+          inset: -4,
+          border: '4px solid transparent',
+          borderTopColor: '#f97316',
+          borderRadius: '9999px'
+        }}
+      />
+    </div>
+    <p className="text-slate-500 font-bold animate-pulse">Initializing Zolver...</p>
+  </div>
+);
 
 const AppContent: React.FC = () => {
   const [darkMode, setDarkMode] = useState(false);
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  // REMOVED: const [userJobs, setUserJobs] = useState<JobRequest[]>(MOCK_JOBS); -> Now using useDatabase
-  const { users, jobs, registerUser, createJob, updateJob, loginUser, updateUser } = useDatabase();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { users, jobs, proposals, registerUser, createJob, updateJob, updateUser } = useDatabase();
+  const { userData, loading, login, signUp, logout: authLogout, resetPassword } = useAuth();
+  const { saveDraft, clearDraft } = useRequestDraft();
+  const currentUser = userData;
 
-  const [screen, setScreen] = useState<'LANDING' | 'WIZARD' | 'DASHBOARD' | 'CHAT' | 'WELCOME' | 'ONBOARDING' | 'PROFILE' | 'COMPANY_CREATION' | 'ALL_CATEGORIES'>('LANDING');
+  const [screen, setScreen] = useState<'LANDING' | 'WIZARD' | 'DASHBOARD' | 'CHAT' | 'WELCOME' | 'ONBOARDING' | 'PROFILE' | 'COMPANY_CREATION' | 'ALL_CATEGORIES' | 'ADMIN' | 'STORE' | 'PUBLIC_PROFILE' | 'TERMS' | 'PRIVACY'>('LANDING');
+  const [publicProId, setPublicProId] = useState<string>('');
+  const [dashboardView, setDashboardView] = useState<DashboardView>('REQUESTS'); // Lifted state
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [activeProposal, setActiveProposal] = useState<Proposal | null>(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [clientSignupOpen, setClientSignupOpen] = useState(false);
+  const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
 
   // State to hold a job created by a guest before they log in
   const [pendingJob, setPendingJob] = useState<Partial<JobRequest> | null>(null);
@@ -37,19 +75,103 @@ const AppContent: React.FC = () => {
 
   // DIRECT BOOKING STATE
   const [directRequestTarget, setDirectRequestTarget] = useState<User | null>(null);
+  const [wizardTargetPro, setWizardTargetPro] = useState<User | null>(null);
 
   useEffect(() => {
-    const savedUser = localStorage.getItem('servicebid_current_session_user');
-    if (savedUser) setCurrentUser(JSON.parse(savedUser));
+    // Sync to localStorage for legacy compatibility is handled in AuthContext
 
     if (darkMode) document.documentElement.classList.add('dark');
     else document.documentElement.classList.remove('dark');
-  }, [darkMode]);
 
-  // FIX: Always go to LANDING (Home Page) when clicking logo
+    // LEGAL PAGES ROUTING
+    const path = location.pathname;
+    if (path === '/terms') {
+      setScreen('TERMS');
+      return;
+    }
+    if (path === '/privacy') {
+      setScreen('PRIVACY');
+      return;
+    }
+
+    // LOGIN ROUTING
+    if (path === '/login') {
+      if (currentUser) {
+        // Already logged in - redirect to dashboard
+        navigate('/', { replace: true });
+        setScreen('DASHBOARD');
+      } else {
+        // Not logged in - open modal and clear URL
+        setAuthModalOpen(true);
+        navigate('/', { replace: true });
+      }
+      return;
+    }
+
+    // REQUEST ROUTING (New /request/new?proId=...)
+    if (path === '/request/new') {
+      const params = new URLSearchParams(location.search);
+      const intentProId = params.get('proId');
+
+      if (intentProId && users.length > 0) {
+        const targetPro = users.find(u => u.id === intentProId);
+        if (targetPro) {
+          setWizardTargetPro(targetPro);
+          setSelectedCategory(targetPro.services?.[0]?.id || 'General');
+          setEditingJob(null);
+          setScreen('WIZARD');
+        }
+      }
+      return; // Stop processing
+    }
+
+    // MANUAL ROUTING FOR PUBLIC PROFILE
+    // path is already defined above
+    const match = path.match(/^\/w\/([a-zA-Z0-9_-]+)$/);
+    if (match && match[1]) {
+      setPublicProId(match[1]);
+      setScreen('PUBLIC_PROFILE');
+    }
+
+    // LEGACY DIRECT REQUEST HANDLING (Query params on root)
+    const params = new URLSearchParams(location.search);
+    const intentProId = params.get('proId');
+    // Only process if at root OR if we didn't catch /request/new
+    if (intentProId && path === '/') {
+      const intentService = params.get('service');
+      const intentAmount = params.get('amount') || "0";
+
+      if (!loading && users.length > 0) {
+        const targetPro = users.find(u => u.id === intentProId);
+        if (targetPro) {
+          setWizardTargetPro(targetPro);
+          setSelectedCategory(intentService || targetPro.services?.[0]?.id || 'General');
+          setEditingJob(null);
+
+          setEditingJob({
+            suggestedPrice: Number(intentAmount)
+          } as any);
+
+          setScreen('WIZARD');
+          // Clean URL
+          window.history.replaceState({}, '', '/');
+        }
+      }
+    }
+
+  }, [darkMode, loading, users, location]); // Added location dependency
+
+  // If Auth is still loading, show splash screen to avoid "flash of unauthenticated content"
+  if (loading) return <LoadingScreen />;
+
+  // FIX: Always go to LANDING (Home Page) when clicking logo, UNLESS Admin
   const handleLogoClick = () => {
-    setEditingJob(null);
-    setScreen('LANDING');
+    if (currentUser?.role === 'ADMIN') {
+      setScreen('ADMIN');
+    } else {
+      setEditingJob(null);
+      setScreen('LANDING');
+    }
   };
 
   const handleStartWizard = (category: string) => {
@@ -65,49 +187,71 @@ const AppContent: React.FC = () => {
   };
 
   const handleLogin = (user: User) => {
-    setCurrentUser(user);
-    localStorage.setItem('servicebid_current_session_user', JSON.stringify(user));
-
-    // Check if there is a pending job from the wizard
-    if (pendingJob) {
-      const newJob: JobRequest = {
-        ...(pendingJob as JobRequest),
-        id: `job-${crypto.randomUUID()}`,
-        clientId: user.id,
-        createdAt: new Date().toISOString(), // Use ISO string for realism
-        status: 'OPEN',
-        proposalsCount: 0
-      };
-      createJob(newJob);
-      setPendingJob(null);
-      setScreen('DASHBOARD');
+    // This is now mostly handled by AuthContext state
+    if (user.role === 'ADMIN' || user.email === 'ceo@zolver.lu') {
+      setScreen('ADMIN');
     } else {
       setScreen('DASHBOARD');
     }
   };
 
   const handleLogout = () => {
-    setCurrentUser(null);
-    localStorage.removeItem('servicebid_current_session_user');
+    authLogout();
     setScreen('LANDING');
   };
 
   const handleSaveJob = (jobData: any) => {
+    // 1. EXTRACT EXTRA FIELDS (Don't save to Job DB)
+    const { saveAddress, addressDetails: newAddrDetails, ...cleanJobData } = jobData;
+
+    // 2. HANDLE SAVE ADDRESS
+    if (currentUser && saveAddress && newAddrDetails && newAddrDetails.city) {
+      const currentAddresses = currentUser.addresses || [];
+      // Simple check to avoid exact duplicates
+      const exists = currentAddresses.some(a =>
+        a.postalCode === newAddrDetails.postalCode &&
+        a.street === newAddrDetails.street &&
+        a.number === newAddrDetails.number
+      );
+
+      if (!exists) {
+        const newAddressObj = {
+          id: `addr-${Date.now()}`,
+          label: newAddrDetails.city, // Default label
+          street: newAddrDetails.street,
+          number: newAddrDetails.number,
+          postalCode: newAddrDetails.postalCode,
+          locality: newAddrDetails.city,
+          floor: newAddrDetails.floor || '',
+          residence: newAddrDetails.residence || ''
+        };
+
+        // OPTIMISTIC UPDATE
+        const updatedUser = {
+          ...currentUser,
+          addresses: [...currentAddresses, newAddressObj]
+        };
+        updateUser(currentUser.id, updatedUser);
+        localStorage.setItem('servicebid_current_session_user', JSON.stringify(updatedUser)); // Persist session
+      }
+    }
+
     const commonData = {
       category: (editingJob ? editingJob.category : selectedCategory) as any,
-      title: jobData.title,
-      description: jobData.description,
-      photos: jobData.photos,
-      location: jobData.location,
-      urgency: jobData.urgency,
-      scheduledDate: jobData.scheduledDate,
-      suggestedPrice: Number(jobData.suggestedPrice) || 0,
+      title: cleanJobData.title,
+      description: cleanJobData.description,
+      photos: cleanJobData.photos,
+      location: cleanJobData.location || { city: 'Luxembourg', postalCode: '', street: '' }, // Fallback for safety
+      urgency: cleanJobData.urgency,
+      scheduledDate: cleanJobData.scheduledDate,
+      suggestedPrice: Number(cleanJobData.suggestedPrice) || 0,
     };
 
     if (!currentUser) {
-      // User is Guest: Save pending job and force login/signup
-      setPendingJob(commonData);
-      setScreen('WELCOME'); // Redirect to Auth
+      // User is Guest: Save draft and OPEN MODAL (do not redirect)
+      saveDraft({ ...commonData, suggestedPrice: commonData.suggestedPrice.toString() });
+      setPendingJob(commonData); // Keep local state for immediate retry
+      setAuthModalOpen(true);
     } else {
       if (editingJob) {
         // UPDATE EXISTING VIA DB
@@ -122,15 +266,31 @@ const AppContent: React.FC = () => {
           status: 'OPEN',
           createdAt: new Date().toISOString(), // Use Real date
           proposalsCount: 0,
-          photos: jobData.photos || [],
+          photos: cleanJobData.photos || [],
           // DIRECT REQUEST FIELDS
-          target_company_id: directRequestTarget ? directRequestTarget.id : undefined,
-          is_direct_request: !!directRequestTarget
+          target_company_id: wizardTargetPro ? wizardTargetPro.id : null,
+          is_direct_request: !!wizardTargetPro,
+          assigned_employee_id: null
         } as JobRequest;
+
         createJob(newJob);
+
+        // EMAIL NOTIFICATION (Direct Request)
+        if (wizardTargetPro && wizardTargetPro.email) {
+          sendNewOrderEmail(
+            wizardTargetPro.email,
+            wizardTargetPro.name,
+            currentUser.name,
+            commonData.title || commonData.category
+          );
+        }
+
       }
       setDirectRequestTarget(null); // Reset after save
+      setWizardTargetPro(null); // Reset target
+      clearDraft(); // Clear draft on success
       setScreen('DASHBOARD');
+      setDashboardView('EXPLORE'); // Redirect to Market/Map (Explore View)
     }
   };
 
@@ -143,8 +303,7 @@ const AppContent: React.FC = () => {
       : [...currentFavs, targetUserId];
 
     const updatedUser = { ...currentUser, favorites: newFavs };
-    setCurrentUser(updatedUser);
-    updateUser(updatedUser); // Update in DB
+    updateUser(currentUser.id, updatedUser); // Update in DB
     localStorage.setItem('servicebid_current_session_user', JSON.stringify(updatedUser)); // Update Session
   };
 
@@ -156,17 +315,20 @@ const AppContent: React.FC = () => {
       : [...currentBlocked, targetUserId];
 
     const updatedUser = { ...currentUser, blockedUsers: newBlocked };
-    setCurrentUser(updatedUser);
-    updateUser(updatedUser); // Update in DB
+    updateUser(currentUser.id, updatedUser); // Update in DB
     localStorage.setItem('servicebid_current_session_user', JSON.stringify(updatedUser)); // Update Session
   };
 
   const renderScreen = () => {
     switch (screen) {
+      case 'TERMS':
+        return <TermsScreen onBack={() => setScreen('LANDING')} />;
+      case 'PRIVACY':
+        return <PrivacyScreen onBack={() => setScreen('LANDING')} />;
       case 'LANDING':
         return (
           <LandingScreen
-            onSelectCategory={handleStartWizard}
+            onSelectCategory={(cat) => handleStartWizard(cat)}
             onRegisterPro={() => setScreen('WELCOME')}
             onOpenCompanyHelp={() => setScreen('COMPANY_CREATION')}
             onViewAllServices={() => setScreen('ALL_CATEGORIES')}
@@ -175,43 +337,55 @@ const AppContent: React.FC = () => {
       case 'ALL_CATEGORIES':
         return (
           <AllServicesScreen
-            onBack={() => setScreen('LANDING')}
-            onSelectCategory={handleStartWizard}
+            onBack={() => {
+              if (currentUser) {
+                // Logged in: Return to Dashboard (Highlights view)
+                setScreen('DASHBOARD');
+                setDashboardView('FEATURED');
+              } else {
+                // Visitor: Return to Landing
+                setScreen('LANDING');
+              }
+            }}
+            onSelectCategory={(cat) => handleStartWizard(cat)}
           />
         );
+      case 'STORE':
+        return <StoreHome />;
       case 'WIZARD':
         return (
           <WizardScreen
             category={selectedCategory}
             currentUser={currentUser}
             initialData={editingJob} // Pass data for editing
-            onComplete={handleSaveJob}
+            targetUser={wizardTargetPro}
+            onComplete={(data) => handleSaveJob(data)}
             onCancel={() => {
               setEditingJob(null);
+              setWizardTargetPro(null); // Reset target
               setScreen(currentUser ? 'DASHBOARD' : 'LANDING');
+              if (currentUser) setDashboardView('REQUESTS'); // Redirect to Dashboard (Requests/Orders)
             }}
           />
         );
       case 'WELCOME':
         return <WelcomeScreen onLogin={(role) => {
           if (role === 'CLIENT') {
-            setAuthModalOpen(true);
+            setClientSignupOpen(true);
           }
           else setScreen('ONBOARDING');
         }} />;
       case 'ONBOARDING':
         return <ProOnboarding onComplete={(data) => {
-          const newPro: User = {
-            id: 'pro-' + Date.now(),
+          signUp(data.email, data.password, {
             name: data.fullName,
-            email: data.email, // Use Real Input Data
-            phone: data.phone, // Use Real Input Data
+            phone: data.phone,
             avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${data.fullName}`,
             role: 'PRO',
-            isVerified: false, // New pros need verification
+            isVerified: false,
             level: 'Novice',
             xp: 0,
-            rating: 5.0, // Start with 5 stars (New)
+            rating: 5.0,
             languages: ['EN', 'FR'],
             addresses: [{
               id: 'addr-pro',
@@ -233,9 +407,8 @@ const AppContent: React.FC = () => {
               iban: data.iban,
               plan: data.selectedPlan
             }
-          };
-          registerUser(newPro); // Save to DB
-          handleLogin(newPro);
+          });
+          setScreen('DASHBOARD');
         }} />;
       case 'COMPANY_CREATION':
         return <CompanyCreationScreen onBack={() => setScreen('LANDING')} />;
@@ -244,19 +417,46 @@ const AppContent: React.FC = () => {
 
         if (currentUser.role === 'CLIENT') {
           return (
-            <ClientDashboard
-              // Filter jobs from DB for this client
-              jobs={jobs.filter(j => j.clientId === currentUser.id)}
-              onSelectProposal={(p) => {
-                setActiveProposal(p);
-                setScreen('CHAT');
-              }}
-              onCreateNew={() => setScreen('ALL_CATEGORIES')}
-              onViewProfile={() => setScreen('PROFILE')}
-              onEdit={handleEditRequest}
-              onDirectRequest={(pro) => setDirectRequestTarget(pro)} // Set target
-              favorites={currentUser.favorites}
-            />
+            <DashboardLayout
+              currentView={dashboardView}
+              onViewChange={setDashboardView}
+              onStoreClick={() => setScreen('STORE')}
+              onHomeClick={() => setDashboardView('REQUESTS')}
+              onProfileClick={() => setScreen('PROFILE')}
+            >
+              <ClientDashboard
+                // Filter jobs from DB for this client
+                jobs={jobs.filter(j => j.clientId === currentUser.id)}
+                onSelectProposal={(p) => {
+                  setActiveProposal(p);
+                  // Do not switch screen, let Dashboard handle split-view/overlay
+                }}
+                onCreateNew={() => setScreen('ALL_CATEGORIES')}
+                onViewProfile={() => setScreen('PROFILE')}
+                onEdit={handleEditRequest}
+                onDirectRequest={(pro) => setDirectRequestTarget(pro)} // Set target
+                onHireAgain={(pro, category) => {
+                  setWizardTargetPro(pro);
+                  setSelectedCategory(category);
+                  setEditingJob(null);
+                  setScreen('WIZARD');
+                }}
+                onStoreClick={() => setScreen('STORE')} // NEW: Pass Store navigation callback
+                favorites={currentUser.favorites}
+                currentView={dashboardView}
+                onViewChange={setDashboardView}
+                activeProposal={activeProposal}
+                onClearProposal={() => setActiveProposal(null)}
+                chatHandlers={{
+                  onToggleFavorite: handleToggleFavorite,
+                  onToggleBlock: handleToggleBlock,
+                  isFavorited: (id) => currentUser.favorites?.includes(id) || false,
+                  isBlocked: (id) => currentUser.blockedUsers?.includes(id) || false
+                }}
+                darkMode={darkMode}
+                onToggleTheme={() => setDarkMode(!darkMode)}
+              />
+            </DashboardLayout>
           );
         } else if (currentUser.role === 'PRO') {
           return (
@@ -267,6 +467,23 @@ const AppContent: React.FC = () => {
                 setActiveProposal(proposal);
                 setScreen('CHAT');
               }}
+              onNavigate={(targetScreen, params) => {
+                if (targetScreen === 'CHAT' && params?.jobId) {
+                  // Find the proposal associated with this job for this pro
+                  const relevantProposal = proposals.find(p => p.jobId === params.jobId && p.proId === currentUser.id);
+                  if (relevantProposal) {
+                    setActiveProposal(relevantProposal);
+                    setScreen('CHAT');
+                  } else {
+                    console.error("App: No proposal found for agenda job", params.jobId);
+                    // Optional: Show notification error
+                  }
+                } else {
+                  setScreen(targetScreen as any);
+                }
+              }}
+              darkMode={darkMode}
+              toggleTheme={() => setDarkMode(!darkMode)}
             />
           );
         } else {
@@ -303,15 +520,29 @@ const AppContent: React.FC = () => {
             onBack={() => setScreen('DASHBOARD')}
             onUpdate={(data) => {
               const updated = { ...currentUser, ...data };
-              setCurrentUser(updated);
-              updateUser(updated); // Sync DB
+              updateUser(currentUser.id, updated); // Sync DB
               localStorage.setItem('servicebid_current_session_user', JSON.stringify(updated));
             }}
           />
         ) : null;
+      case 'ADMIN':
+        return <AdminDashboard />;
+      case 'PUBLIC_PROFILE':
+        return (
+          <ProPublicProfile
+            proId={publicProId}
+            onContact={(pro) => {
+              setWizardTargetPro(pro);
+              setSelectedCategory(pro.services?.[0]?.id || 'General'); // Default to first service or General
+              setScreen('WIZARD');
+              // Optional: Reset URL to avoid confusion if they refresh
+              window.history.pushState({}, '', '/');
+            }}
+          />
+        );
       default:
         return <LandingScreen
-          onSelectCategory={handleStartWizard}
+          onSelectCategory={(cat) => handleStartWizard(cat)}
           onRegisterPro={() => setScreen('WELCOME')}
           onOpenCompanyHelp={() => setScreen('COMPANY_CREATION')}
           onViewAllServices={() => setScreen('ALL_CATEGORIES')}
@@ -329,19 +560,25 @@ const AppContent: React.FC = () => {
         onLogoClick={handleLogoClick}
         onProfileClick={() => setScreen('PROFILE')}
         onDashboardClick={() => setScreen('DASHBOARD')}
-        onLogin={() => setAuthModalOpen(true)}
+        onLogin={(email, pass) => setAuthModalOpen(true)}
+        onSignUpClick={() => setScreen('WELCOME')}
         onSwitchRole={() => { }}
+        onStoreClick={() => setScreen('STORE')}
         authModalOpen={authModalOpen}
         setAuthModalOpen={setAuthModalOpen}
+        currentView={dashboardView}
+        onViewChange={setDashboardView}
       >
         <AnimatePresence mode='wait'>
           <motion.div
-            key={screen}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.2 }}
-            className="w-full"
+            {...({
+              key: screen,
+              initial: { opacity: 0, y: 10 },
+              animate: { opacity: 1, y: 0 },
+              exit: { opacity: 0, y: -10 },
+              transition: { duration: 0.2 },
+              className: "w-full"
+            } as any)}
           >
             {renderScreen()}
           </motion.div>
@@ -355,6 +592,7 @@ const AppContent: React.FC = () => {
             pro={directRequestTarget}
             onClose={() => setDirectRequestTarget(null)}
             onSelect={(category) => {
+              setWizardTargetPro(directRequestTarget); // Persist target for Wizard
               setDirectRequestTarget(null); // Close modal
               // Start Wizard with this target
               setEditingJob(null);
@@ -365,6 +603,8 @@ const AppContent: React.FC = () => {
         )}
       </AnimatePresence>
 
+      <CartDrawer />
+
       <LoginModal
         isOpen={authModalOpen}
         onClose={() => setAuthModalOpen(false)}
@@ -373,74 +613,76 @@ const AppContent: React.FC = () => {
           setScreen('WELCOME');
         }}
         onLogin={async (email, pass) => {
-          // REAL DB LOGIN
-          const user = await loginUser(email, pass);
-          if (user) {
-            handleLogin(user);
+          try {
+            await login(email, pass);
             setAuthModalOpen(false);
-          } else {
-            // Fallback for Demo hardcoded users if not in DB
-            // This is useful if the DB seed didn't happen or context was lost
-            const lowerKey = email.toLowerCase();
-            let found = null;
 
-            if (lowerKey.includes('alice') || lowerKey.includes('client')) {
-              found = users.find(u => u.role === 'CLIENT');
-              if (!found) {
-                const newAlice = { ...MOCK_CLIENT, id: 'client-1', email: 'alice@client.com' };
-                await registerUser(newAlice);
-                found = newAlice;
-              }
-            } else if (lowerKey.includes('roberto') || lowerKey.includes('pro')) {
-              found = users.find(u => u.role === 'PRO');
-              if (!found) {
-                const newRoberto = { ...MOCK_PRO, id: 'pro-1', email: 'roberto@pro.com' };
-                await registerUser(newRoberto);
-                found = newRoberto;
-              }
-            } else if (lowerKey.includes('luigi') || lowerKey.includes('staff')) {
-              found = users.find(u => u.role === 'EMPLOYEE');
-              if (!found) {
-                const newLuigi = { ...MOCK_EMPLOYEE, id: 'staff-1', email: 'luigi@staff.com', companyId: 'pro-1' };
-                await registerUser(newLuigi);
-                found = newLuigi;
-              }
+            // CHECK REDIRECT
+            const params = new URLSearchParams(location.search);
+            const redirect = params.get('redirect');
+            if (redirect) {
+              navigate(redirect);
+              return;
             }
 
-            if (found) {
-              handleLogin(found);
-              setAuthModalOpen(false);
+            // If we have a pending job (Guest Checkout flow), DO NOT Redirect.
+            // The user stays on Wizard, but now is logged in.
+            // They can click "Submit" again to finish.
+            if (pendingJob) {
+              // Optional: We could auto-submit here, but it's safer to let them review and click "Save".
+              // Just stay on current screen.
+              return;
+            }
+
+            if (email === 'ceo@zolver.lu') {
+              setScreen('ADMIN');
             } else {
-              // Final fallback: Create temp user
-              const newUser: User = {
-                id: `client-${Date.now()}`,
-                name: email.split('@')[0],
-                email: email,
-                avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${email}`,
-                role: 'CLIENT',
-                languages: ['EN'],
-                addresses: [],
-                twoFactorEnabled: false
-              };
-              await registerUser(newUser);
-              handleLogin(newUser);
-              setAuthModalOpen(false);
+              setScreen('DASHBOARD');
             }
+          } catch (e) {
+            console.error("Login failed", e);
+            // In a real app, show a toast here
           }
         }}
+        onForgotPasswordClick={() => setForgotPasswordOpen(true)}
+      />
+
+      <ClientSignupModal
+        isOpen={clientSignupOpen}
+        onClose={() => setClientSignupOpen(false)}
+        onSignUp={async (data) => {
+          await signUp(data.email, data.password, data);
+          setScreen('DASHBOARD');
+        }}
+        onLoginClick={() => {
+          setClientSignupOpen(false);
+          setAuthModalOpen(true);
+        }}
+      />
+
+      <ForgotPasswordModal
+        isOpen={forgotPasswordOpen}
+        onClose={() => setForgotPasswordOpen(false)}
+        onReset={resetPassword}
       />
     </div>
   );
 };
 
 const App: React.FC = () => (
-  <DatabaseProvider>
-    <NotificationProvider>
-      <LanguageProvider>
-        <AppContent />
-      </LanguageProvider>
-    </NotificationProvider>
-  </DatabaseProvider>
+  <AuthProvider>
+    <DatabaseProvider>
+      <NotificationProvider>
+        <LanguageProvider>
+          <CartProvider>
+            <RequestDraftProvider>
+              <AppContent />
+            </RequestDraftProvider>
+          </CartProvider>
+        </LanguageProvider>
+      </NotificationProvider>
+    </DatabaseProvider>
+  </AuthProvider>
 );
 
 // Safe ID Generator Helper (Fallback for older browsers)

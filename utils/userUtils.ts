@@ -2,7 +2,7 @@ import { db } from '../src/lib/firebase';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 
 export const slugify = (text: string): string => {
-    return text.toString().toLowerCase()
+    return (text || '').toString().toLowerCase()
         .replace(/\s+/g, '-')           // Replace spaces with -
         .replace(/[^\w\-]+/g, '')       // Remove all non-word chars
         .replace(/\-\-+/g, '-')         // Replace multiple - with single -

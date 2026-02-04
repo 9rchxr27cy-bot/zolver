@@ -28,7 +28,7 @@ const MOCK_MEDIA: InstagramMedia[] = [
   {
     id: '179238472',
     media_type: 'IMAGE',
-    media_url: 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?q=80&w=600&auto=format&fit=crop',
+    media_url: 'https://images.unsplash.com/photo-1581094794329-cd1096a7a2e8?auto=format&fit=crop&q=80&w=600',
     caption: 'Instalação elétrica completa em residência moderna. #eletricista #luxembourg',
     permalink: '',
     timestamp: new Date().toISOString()
@@ -36,7 +36,7 @@ const MOCK_MEDIA: InstagramMedia[] = [
   {
     id: '179238473',
     media_type: 'IMAGE',
-    media_url: 'https://images.unsplash.com/photo-1581094794329-cd1096a7a2e8?q=80&w=600&auto=format&fit=crop',
+    media_url: 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?auto=format&fit=crop&q=80&w=600',
     caption: 'Manutenção de painéis solares. Energia limpa para sua casa! ☀️',
     permalink: '',
     timestamp: new Date().toISOString()
@@ -44,7 +44,7 @@ const MOCK_MEDIA: InstagramMedia[] = [
   {
     id: '179238474',
     media_type: 'IMAGE',
-    media_url: 'https://images.unsplash.com/photo-1556910103-1c02745a30bf?q=80&w=600&auto=format&fit=crop',
+    media_url: 'https://images.unsplash.com/photo-1556910103-1c02745a30bf?auto=format&fit=crop&q=80&w=600',
     caption: 'Renovação de cozinha: encanamento e iluminação LED.',
     permalink: '',
     timestamp: new Date().toISOString()
@@ -52,8 +52,8 @@ const MOCK_MEDIA: InstagramMedia[] = [
   {
     id: '179238475',
     media_type: 'VIDEO',
-    media_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4', // Placeholder video
-    thumbnail_url: 'https://images.unsplash.com/photo-1504328345606-18bbc8c9d7d1?q=80&w=600&auto=format&fit=crop',
+    media_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+    thumbnail_url: 'https://images.unsplash.com/photo-1504328345606-18bbc8c9d7d1?auto=format&fit=crop&q=80&w=600',
     caption: 'Timelapse do nosso trabalho de hoje. Rápido e limpo!',
     permalink: '',
     timestamp: new Date().toISOString()
@@ -61,7 +61,7 @@ const MOCK_MEDIA: InstagramMedia[] = [
   {
     id: '179238476',
     media_type: 'IMAGE',
-    media_url: 'https://images.unsplash.com/photo-1632921256082-277a119777f9?q=80&w=600&auto=format&fit=crop',
+    media_url: 'https://images.unsplash.com/photo-1632921256082-277a119777f9?auto=format&fit=crop&q=80&w=600',
     caption: 'Troca de disjuntores antigos. Segurança em primeiro lugar.',
     permalink: '',
     timestamp: new Date().toISOString()
@@ -69,7 +69,7 @@ const MOCK_MEDIA: InstagramMedia[] = [
   {
     id: '179238477',
     media_type: 'IMAGE',
-    media_url: 'https://images.unsplash.com/photo-1621905252507-b35492cc74b4?q=80&w=600&auto=format&fit=crop',
+    media_url: 'https://images.unsplash.com/photo-1621905252507-b35492cc74b4?auto=format&fit=crop&q=80&w=600',
     caption: 'Antes e depois desta instalação. O que acharam?',
     permalink: '',
     timestamp: new Date().toISOString()
@@ -85,7 +85,7 @@ export const instagramService = {
     // Em produção real:
     // const authUrl = `https://api.instagram.com/oauth/authorize?client_id=${INSTAGRAM_APP_ID}&redirect_uri=${REDIRECT_URI}&scope=user_profile,user_media&response_type=code`;
     // window.location.href = authUrl;
-    
+
     // Para DEMO: Simulamos sucesso imediato salvando um token fake
     console.log("Simulating Instagram Auth Redirect...");
     return new Promise<void>((resolve) => {
@@ -117,7 +117,7 @@ export const instagramService = {
     if (cachedData) {
       const { media, timestamp } = JSON.parse(cachedData);
       const oneDay = 24 * 60 * 60 * 1000;
-      
+
       if (Date.now() - timestamp < oneDay) {
         console.log("Serving Instagram media from cache (Optimistic UI)");
         return media;
@@ -129,13 +129,13 @@ export const instagramService = {
     return new Promise((resolve) => {
       setTimeout(() => {
         // Em produção: axios.get(`https://graph.instagram.com/me/media?fields=id,caption,media_type,media_url,thumbnail_url,permalink&access_token=${token}`)
-        
+
         // Salvando no cache
         localStorage.setItem(CACHE_KEY, JSON.stringify({
           media: MOCK_MEDIA,
           timestamp: Date.now()
         }));
-        
+
         resolve(MOCK_MEDIA);
       }, 1000);
     });

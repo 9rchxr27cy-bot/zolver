@@ -2,10 +2,17 @@
 import React, { useState } from 'react';
 import { Moon, Sun, ChevronDown, User as UserIcon, LogOut, X, Mail, Phone, Lock, Briefcase, User as UserCircle, LayoutDashboard, Wrench } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useAuth } from '../contexts/AuthContext';
 import { User } from '../types';
 import { useLanguage, LANGUAGES_LIST, Language } from '../contexts/LanguageContext';
 import { Button, Input, ZolverLogo } from './ui';
+import { db } from '../src/lib/firebase';
+import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
+import { Announcement } from '../types';
 export { Button, Input, Card, Badge } from './ui';
+
+import { DashboardView } from '../screens/ClientScreens';
+import { Home, MessageCircle, Compass, CreditCard, ShoppingBag } from 'lucide-react';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -18,9 +25,13 @@ interface LayoutProps {
   onDashboardClick: () => void;
   onLogin: (emailOrPhone: string, pass: string) => void;
   onSignUpClick: () => void;
-  // New props for controlling modal externally
+  onSwitchRole: () => void;
   authModalOpen: boolean;
   setAuthModalOpen: (open: boolean) => void;
+  // Navigation Control
+  onStoreClick?: () => void;
+  currentView?: DashboardView;
+  onViewChange?: (view: DashboardView) => void;
 }
 
 export const Layout: React.FC<LayoutProps> = ({
@@ -35,234 +46,83 @@ export const Layout: React.FC<LayoutProps> = ({
   onLogin,
   onSignUpClick,
   authModalOpen,
-  setAuthModalOpen
+  setAuthModalOpen,
+  onStoreClick,
+  currentView,
+  onViewChange
 }) => {
   const { language, setLanguage, t } = useLanguage();
+  const { isImpersonating, exitGhostMode } = useAuth();
   const [isLangOpen, setIsLangOpen] = useState(false);
   const [isUserOpen, setIsUserOpen] = useState(false);
 
   const currentLangObj = LANGUAGES_LIST.find(l => l.code === language) || LANGUAGES_LIST[0];
   const isEmployee = user?.role === 'EMPLOYEE';
+  const isAdmin = user?.role === 'ADMIN';
 
-  const LoginModal = () => {
-    const [loginTab, setLoginTab] = useState<'email' | 'phone'>('email');
-    const [email, setEmail] = useState('');
-    const [phone, setPhone] = useState('');
-    const [password, setPassword] = useState('');
+  const [announcement, setAnnouncement] = useState<Announcement | null>(null);
 
-    return (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
-          onClick={() => setAuthModalOpen(false)}
-        />
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 20 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 20 }}
-          className="relative w-full max-w-md m-4 bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-2xl overflow-hidden z-[110]"
-        >
-          <div className="p-6 md:p-8">
-            <button
-              onClick={() => setAuthModalOpen(false)}
-              className="absolute top-6 right-6 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
-            >
-              <X size={24} />
-            </button>
-
-            <div className="flex flex-col items-center mb-8">
-              <div className="w-16 h-16 bg-slate-900 dark:bg-white rounded-2xl flex items-center justify-center shadow-lg mb-4 text-orange-500 p-3">
-                <ZolverLogo />
-              </div>
-              <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">{t.signIn}</h2>
-              <p className="text-slate-500 text-sm mt-1">{t.welcomeSubtitle}</p>
-            </div>
-
-            {/* Quick Login Section */}
-            <div className="mb-8 space-y-3">
-              <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest text-center">Quick Access (Demo)</p>
-              <div className="flex flex-col gap-3">
-                {/* 1. Client */}
-                <button
-                  onClick={() => {
-                    onLogin('alice.j@email.lu', 'password123');
-                    setAuthModalOpen(false);
-                  }}
-                  className="flex items-center gap-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/50 rounded-2xl hover:bg-blue-100 transition-colors group relative overflow-hidden"
-                >
-                  <div className="w-10 h-10 rounded-xl bg-blue-500 flex items-center justify-center text-white shrink-0 shadow-lg shadow-blue-500/30">
-                    <UserCircle size={20} />
-                  </div>
-                  <div className="text-left flex-1">
-                    <span className="block text-[10px] font-black uppercase text-blue-600 dark:text-blue-400 leading-none mb-1">I am a Client</span>
-                    <span className="block text-sm font-bold text-slate-800 dark:text-slate-200">Alice J.</span>
-                  </div>
-                  <div className="text-blue-300 group-hover:text-blue-500 transition-colors"><ChevronDown className="-rotate-90" /></div>
-                </button>
-
-                {/* 2. Professional */}
-                <button
-                  onClick={() => {
-                    onLogin('roberto.pro@servicebid.lu', 'password123');
-                    setAuthModalOpen(false);
-                  }}
-                  className="flex items-center gap-4 p-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-800/50 rounded-2xl hover:bg-orange-100 transition-colors group relative overflow-hidden"
-                >
-                  <div className="w-10 h-10 rounded-xl bg-orange-500 flex items-center justify-center text-white shrink-0 shadow-lg shadow-orange-500/30">
-                    <Briefcase size={20} />
-                  </div>
-                  <div className="text-left flex-1">
-                    <span className="block text-[10px] font-black uppercase text-orange-600 dark:text-orange-400 leading-none mb-1">I am a Pro (Admin)</span>
-                    <span className="block text-sm font-bold text-slate-800 dark:text-slate-200">Roberto S.</span>
-                  </div>
-                  <div className="text-orange-300 group-hover:text-orange-500 transition-colors"><ChevronDown className="-rotate-90" /></div>
-                </button>
-
-                {/* 3. Employee */}
-                <button
-                  onClick={() => {
-                    onLogin('luigi.staff@servicebid.lu', 'password123');
-                    setAuthModalOpen(false);
-                  }}
-                  className="flex items-center gap-4 p-3 bg-purple-50 dark:bg-purple-900/20 border border-purple-100 dark:border-purple-800/50 rounded-2xl hover:bg-purple-100 transition-colors group relative overflow-hidden"
-                >
-                  <div className="w-10 h-10 rounded-xl bg-purple-500 flex items-center justify-center text-white shrink-0 shadow-lg shadow-purple-500/30">
-                    <Wrench size={20} />
-                  </div>
-                  <div className="text-left flex-1">
-                    <span className="block text-[10px] font-black uppercase text-purple-600 dark:text-purple-400 leading-none mb-1">I am Staff</span>
-                    <span className="block text-sm font-bold text-slate-800 dark:text-slate-200">Luigi (Tech)</span>
-                  </div>
-                  <div className="text-purple-300 group-hover:text-purple-500 transition-colors"><ChevronDown className="-rotate-90" /></div>
-                </button>
-              </div>
-            </div>
-
-            <div className="relative mb-8">
-              <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-100 dark:border-slate-800"></div></div>
-              <div className="relative flex justify-center text-[10px] uppercase font-black text-slate-300"><span className="bg-white dark:bg-slate-900 px-4 tracking-widest">Or login manual</span></div>
-            </div>
-
-            {/* Tabs */}
-            <div className="flex bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl mb-8">
-              <button
-                onClick={() => setLoginTab('email')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-all ${loginTab === 'email' ? 'bg-white dark:bg-slate-900 text-orange-500 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-              >
-                <Mail size={16} /> {t.loginWithEmail}
-              </button>
-              <button
-                onClick={() => setLoginTab('phone')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-all ${loginTab === 'phone' ? 'bg-white dark:bg-slate-900 text-orange-500 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-              >
-                <Phone size={16} /> {t.loginWithPhone}
-              </button>
-            </div>
-
-            <form className="space-y-6" onSubmit={(e) => {
-              e.preventDefault();
-              onLogin(loginTab === 'email' ? email : phone, password);
-              setAuthModalOpen(false);
-            }}>
-              <AnimatePresence mode="wait">
-                {loginTab === 'email' ? (
-                  <motion.div
-                    key="email"
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: 10 }}
-                    transition={{ duration: 0.2 }}
-                  >
-                    <Input
-                      label={t.email}
-                      type="email"
-                      placeholder="name@email.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      required
-                    />
-                  </motion.div>
-                ) : (
-                  <motion.div
-                    key="phone"
-                    initial={{ opacity: 0, x: 10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -10 }}
-                    transition={{ duration: 0.2 }}
-                  >
-                    <Input
-                      label={t.phoneLabel}
-                      type="tel"
-                      placeholder="+352 6XX XXX XXX"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      required
-                    />
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              <div className="space-y-1">
-                <Input
-                  label={t.password}
-                  type="password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
-                <div className="flex justify-end">
-                  <button type="button" className="text-xs font-bold text-orange-600 hover:text-orange-500">{t.forgotPassword}</button>
-                </div>
-              </div>
-
-              <Button type="submit" className="w-full h-14 rounded-2xl font-black text-lg shadow-xl shadow-orange-500/20">
-                {t.signIn}
-              </Button>
-            </form>
-
-            <div className="mt-8 text-center">
-              <p className="text-sm text-slate-500">
-                {t.dontHaveAccount} <button
-                  onClick={() => {
-                    onSignUpClick();
-                    setAuthModalOpen(false);
-                  }}
-                  className="text-orange-600 font-bold hover:text-orange-500 ml-1"
-                >
-                  {t.signUp}
-                </button>
-              </p>
-            </div>
-          </div>
-        </motion.div>
-      </div>
+  React.useEffect(() => {
+    const q = query(
+      collection(db, 'system_announcements'),
+      where('active', '==', true),
+      orderBy('createdAt', 'desc')
     );
+    const unsub = onSnapshot(q, (snap) => {
+      if (!snap.empty) {
+        setAnnouncement(snap.docs[0].data() as Announcement);
+      } else {
+        setAnnouncement(null);
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  const handleNavClick = (view: DashboardView) => {
+    if (onViewChange) {
+      onViewChange(view);
+    }
   };
 
   return (
     <div className={darkMode ? 'dark' : ''}>
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans selection:bg-orange-100 selection:text-orange-900">
-        <nav className="sticky top-0 z-50 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-4 md:px-8 py-3 flex items-center justify-between">
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans selection:bg-orange-100 selection:text-orange-900 pb-20 md:pb-0 pt-0 md:pt-16">
+
+        {/* --- DESKTOP TOP BAR (Fixed) --- */}
+        <nav className={`fixed top-0 w-full z-50 backdrop-blur-md px-4 md:px-8 py-3 hidden md:flex items-center justify-between shadow-sm transition-colors duration-300
+            ${isAdmin
+            ? 'bg-slate-900/95 dark:bg-black/90 border-b border-red-900/30'
+            : 'bg-white/80 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800'
+          }`}>
+          {/* LEFT: Logo */}
           <div
             className={`flex items-center gap-2 group ${isEmployee ? 'cursor-default' : 'cursor-pointer'}`}
             onClick={isEmployee ? undefined : onLogoClick}
           >
-            <div className={`w-10 h-10 bg-slate-900 dark:bg-white rounded-xl flex items-center justify-center shadow-lg shadow-slate-900/20 dark:shadow-none transition-transform p-2 text-orange-500 ${!isEmployee && 'group-active:scale-90'}`}>
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-lg transition-transform p-2
+                ${isAdmin
+                ? 'bg-red-600 text-white shadow-red-500/20'
+                : 'bg-slate-900 dark:bg-white text-orange-500 shadow-slate-900/20 dark:shadow-none'
+              } ${!isEmployee && 'group-active:scale-90'}`}>
               <ZolverLogo />
             </div>
-            <span className="text-xl font-black uppercase tracking-tighter block">Zolver<span className="text-orange-500">.lu</span></span>
+            <div>
+              <span className={`text-xl font-black uppercase tracking-tighter block ${isAdmin ? 'text-white' : ''}`}>
+                Zolver<span className={isAdmin ? 'text-red-500' : 'text-orange-500'}>.lu</span>
+              </span>
+              {isAdmin && <span className="text-[10px] font-bold text-red-500 tracking-widest uppercase block -mt-1">Command Center</span>}
+            </div>
           </div>
 
+          {/* CENTER: Navigation Links Removed for Minimalist Design */}
+
+
+          {/* RIGHT: User & Settings */}
           <div className="flex items-center gap-2 sm:gap-6">
-            {/* Language Selector */}
             <div className="relative">
               <button
                 onClick={() => setIsLangOpen(!isLangOpen)}
-                className="flex items-center gap-2 px-2 sm:px-3 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                className={`flex items-center gap-2 px-2 sm:px-3 py-2 rounded-xl transition-colors ${!user ? 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700' : 'hover:bg-slate-100 dark:hover:bg-slate-800'}`}
               >
                 <span className="text-lg">{currentLangObj.flag}</span>
                 <ChevronDown size={14} className={`text-slate-400 transition-transform ${isLangOpen ? 'rotate-180' : ''}`} />
@@ -271,10 +131,12 @@ export const Layout: React.FC<LayoutProps> = ({
               <AnimatePresence>
                 {isLangOpen && (
                   <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 10 }}
-                    className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-800 p-2 z-50 overflow-hidden"
+                    {...({
+                      initial: { opacity: 0, y: 10 },
+                      animate: { opacity: 1, y: 0 },
+                      exit: { opacity: 0, y: 10 },
+                      className: "absolute right-0 mt-2 w-48 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-800 p-2 z-50 overflow-hidden"
+                    } as any)}
                   >
                     {LANGUAGES_LIST.map((l) => (
                       <button
@@ -286,7 +148,7 @@ export const Layout: React.FC<LayoutProps> = ({
                         className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-colors ${language === l.code ? 'bg-orange-50 text-orange-600 dark:bg-orange-900/20 dark:text-orange-400' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
                       >
                         <span className="text-lg">{l.flag}</span>
-                        {l.label}
+                        {l.name}
                       </button>
                     ))}
                   </motion.div>
@@ -294,7 +156,6 @@ export const Layout: React.FC<LayoutProps> = ({
               </AnimatePresence>
             </div>
 
-            {/* Theme Toggle */}
             <button
               onClick={toggleTheme}
               className="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:scale-110 active:scale-95 transition-all"
@@ -302,7 +163,6 @@ export const Layout: React.FC<LayoutProps> = ({
               {darkMode ? <Sun size={20} /> : <Moon size={20} />}
             </button>
 
-            {/* User Profile / Login */}
             {user ? (
               <div className="relative">
                 <button
@@ -317,10 +177,12 @@ export const Layout: React.FC<LayoutProps> = ({
                 <AnimatePresence>
                   {isUserOpen && (
                     <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: 10 }}
-                      className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-800 p-2 z-50 overflow-hidden"
+                      {...({
+                        initial: { opacity: 0, y: 10 },
+                        animate: { opacity: 1, y: 0 },
+                        exit: { opacity: 0, y: 10 },
+                        className: "absolute right-0 mt-2 w-56 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-800 p-2 z-50 overflow-hidden"
+                      } as any)}
                     >
                       <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 mb-2">
                         <span className="block text-[10px] font-black uppercase text-slate-400 tracking-widest">{t.loggedAs}</span>
@@ -351,22 +213,119 @@ export const Layout: React.FC<LayoutProps> = ({
             ) : (
               <Button
                 onClick={() => setAuthModalOpen(true)}
-                className="h-10 sm:h-11 px-4 sm:px-6 rounded-xl font-bold text-sm shadow-lg shadow-orange-500/20 whitespace-nowrap"
+                className="h-10 sm:h-11 px-4 sm:px-6 rounded-xl font-bold text-sm shadow-lg shadow-orange-500/20 whitespace-nowrap flex items-center gap-1"
               >
-                {t.signIn}
+                <span>{t.signIn}</span>
+                <span className="opacity-70 font-normal">/ Join</span>
               </Button>
             )}
           </div>
         </nav>
 
-        <main className="max-w-7xl mx-auto min-h-[calc(100vh-64px)]">
+        <div className={`md:hidden sticky top-0 z-50 backdrop-blur border-b p-4 flex justify-between items-center transition-colors duration-300
+            ${isAdmin
+            ? 'bg-slate-900/95 text-white border-red-900/30'
+            : 'bg-white/90 dark:bg-slate-900/90 text-slate-900 dark:text-white border-slate-100 dark:border-slate-800'
+          } ${user ? 'hidden' : ''}`}>
+          {/* Left: Logo */}
+          <div className="flex items-center gap-2" onClick={onLogoClick}>
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors
+                ${isAdmin ? 'bg-red-600 text-white' : 'bg-slate-900 text-orange-500'}`}>
+              <ZolverLogo className="w-4 h-4" />
+            </div>
+            <div>
+              <span className="font-black text-lg leading-none block">Zolver</span>
+              {isAdmin && <span className="text-[8px] font-bold text-red-500 tracking-widest uppercase block">ADMIN</span>}
+              {!isAdmin && <span className="text-[8px] font-bold text-orange-500 tracking-widest uppercase block">LUXEMBOURG</span>}
+            </div>
+          </div>
+
+          {/* Right: Actions */}
+          <div className="flex items-center gap-3">
+            {/* Public: Language Switcher specific for mobile */}
+            {!user && (
+              <button
+                onClick={() => setIsLangOpen(!isLangOpen)}
+                className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800"
+              >
+                <span className="text-sm">{currentLangObj.flag}</span>
+              </button>
+            )}
+
+            {/* Theme Toggle */}
+            <button onClick={toggleTheme} className="p-2 text-slate-500">
+              {darkMode ? <Sun size={20} /> : <Moon size={20} />}
+            </button>
+
+            {/* Public: Login Button Short */}
+            {!user && (
+              <Button
+                size="sm"
+                onClick={() => setAuthModalOpen(true)}
+                className="px-3 py-1.5 h-auto text-xs font-bold"
+              >
+                {t.signIn} / Join
+              </Button>
+            )}
+
+            {/* Mobile User Menu Toggle if Logged In? Already separate usually, but here just barebones */}
+            {user && (
+              <img
+                src={user.avatar}
+                className="w-8 h-8 rounded-lg border border-slate-200"
+                onClick={onProfileClick} // Simple profile nav
+              />
+            )}
+          </div>
+        </div>
+
+        {/* Mobile Language Dropdown (Global Overlay) */}
+        <AnimatePresence>
+          {isLangOpen && !user && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              {...({ className: "md:hidden fixed top-16 right-4 z-[60] bg-white dark:bg-slate-900 shadow-xl rounded-xl border border-slate-200 dark:border-slate-800 p-2 w-48" } as any)}
+            >
+              {LANGUAGES_LIST.map((l) => (
+                <button
+                  key={l.code}
+                  onClick={() => { setLanguage(l.code as Language); setIsLangOpen(false); }}
+                  className="w-full flex items-center gap-3 px-3 py-3 text-sm font-bold border-b border-slate-50 last:border-0 dark:border-slate-800"
+                >
+                  <span>{l.flag}</span> {l.name}
+                </button>
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+
+        {isImpersonating && (
+          <div className="bg-red-900/90 text-white text-center py-2 font-mono border-b-2 border-red-500 animate-pulse flex items-center justify-center gap-4">
+            <span>👁️ GHOST MODE ACTIVE: VIEWING AS {user?.email}</span>
+            <button onClick={exitGhostMode} className="bg-white text-red-900 px-3 py-1 rounded text-xs font-bold uppercase hover:bg-red-100">
+              Exit Spy Mode
+            </button>
+          </div>
+        )}
+
+        {announcement && (
+          <div className={`w-full py-2 px-4 text-center text-sm font-bold text-white flex items-center justify-center gap-2 animate-in slide-in-from-top duration-500 ${announcement.type === 'CRITICAL' ? 'bg-red-600' :
+            announcement.type === 'WARNING' ? 'bg-orange-500' : 'bg-blue-600'
+            }`}>
+            📢 {announcement.message}
+          </div>
+        )}
+
+        <main className="max-w-7xl mx-auto min-h-[calc(100vh-64px)] pb-24 md:pb-0">
           {children}
         </main>
 
-        <AnimatePresence>
-          {authModalOpen && <LoginModal />}
-        </AnimatePresence>
+
+
       </div>
-    </div>
+    </div >
   );
 };
