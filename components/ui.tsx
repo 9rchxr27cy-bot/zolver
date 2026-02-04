@@ -13,9 +13,9 @@ export const ZolverLogo: React.FC<{ className?: string, withText?: boolean }> = 
   <div className={cn("flex items-center gap-2", className)}>
     <svg viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
       {/* Background shape removed for icon usage, keeping the Z path */}
-      <path d="M130 140H382L320 220H130V140Z" fill="currentColor"/>
-      <path d="M382 140L130 372V400H382L420 300H230L382 160V140Z" fill="currentColor"/>
-      <path d="M420 300L440 250" stroke="currentColor" strokeWidth="20" strokeLinecap="round"/>
+      <path d="M130 140H382L320 220H130V140Z" fill="currentColor" />
+      <path d="M382 140L130 372V400H382L420 300H230L382 160V140Z" fill="currentColor" />
+      <path d="M420 300L440 250" stroke="currentColor" strokeWidth="20" strokeLinecap="round" />
     </svg>
     {withText && (
       <span className="font-black text-slate-900 dark:text-white tracking-tighter uppercase">
@@ -99,7 +99,7 @@ interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 export const Card: React.FC<CardProps> = ({ children, className, onClick, ...props }) => (
-  <div 
+  <div
     onClick={onClick}
     className={cn(
       'bg-white dark:bg-slate-850 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 p-5',
@@ -124,5 +124,20 @@ export const LevelBadge: React.FC<{ level: string }> = ({ level }) => {
     <span className={cn('px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider', colors[level] || colors.Novice)}>
       {level}
     </span>
+  );
+};
+
+export const Badge: React.FC<{ children: React.ReactNode; variant?: 'default' | 'outline' | 'secondary' | 'destructive' | 'success'; className?: string }> = ({ children, variant = 'default', className }) => {
+  const variants = {
+    default: 'bg-primary text-primary-foreground border-transparent hover:bg-primary/80',
+    outline: 'text-foreground border-slate-200 hover:bg-slate-100',
+    secondary: 'bg-secondary text-secondary-foreground border-transparent hover:bg-secondary/80',
+    destructive: 'bg-red-500 text-white border-transparent hover:bg-red-600',
+    success: 'bg-green-500 text-white border-transparent hover:bg-green-600'
+  };
+  return (
+    <div className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2", variants[variant], className)}>
+      {children}
+    </div>
   );
 };

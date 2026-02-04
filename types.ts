@@ -74,7 +74,16 @@ export interface User {
   // User Preferences
   favorites?: string[]; // Array of User IDs
   blockedUsers?: string[]; // Array of User IDs
-  
+
+  username?: string; // Handle
+  followers?: string[]; // Array of User IDs
+  following?: string[]; // Array of User IDs
+  instagram_url?: string;
+
+  // Shortcuts for UI (optional, might be in companyDetails)
+  openingTime?: string;
+  closingTime?: string;
+
   // EMPLOYEE SPECIFIC - HR DATA
   companyId?: string; // Links employee to the Boss (Pro)
   jobTitle?: string; // e.g., "Senior Technician"
@@ -92,11 +101,14 @@ export interface Review {
   rating: number;
   comment: string;
   date: string;
+  employeeId?: string; // Added for staff reviews
 }
 
-export type JobStatus = 
-  | 'OPEN' 
-  | 'NEGOTIATING' 
+export type JobStatus =
+  | 'OPEN'
+  | 'WAITING_PROVIDER_CONFIRMATION' // Added for Direct Request flow
+  | 'WAITING_CLIENT_CONFIRMATION' // Added for review flow
+  | 'NEGOTIATING'
   | 'CONFIRMED'   // Pro aceito
   | 'EN_ROUTE'    // A caminho
   | 'ARRIVED'     // Chegou no local
@@ -109,6 +121,7 @@ export type JobStatus =
 export interface JobRequest {
   id: string;
   clientId: string;
+  clientName?: string; // Added for UI convenience
   category: Category;
   title?: string;
   description: string;
@@ -126,9 +139,13 @@ export interface JobRequest {
   distance?: string;
   paymentMethod?: 'CASH' | 'CARD' | 'TRANSFER'; // New Field
   // Manual / External Job Fields
-  isExternal?: boolean; 
+  isExternal?: boolean;
   externalClientName?: string;
-  
+
+  // DIRECT REQUEST
+  is_direct_request?: boolean;
+  target_company_id?: string;
+
   // TEAM MANAGEMENT
   assignedTo?: string; // ID of the Employee assigned to this job
 }
@@ -201,7 +218,7 @@ export interface ChatMessage {
   isSystem?: boolean;
   isAutoReply?: boolean; // NEW: Distinguish bot messages
   type: 'text' | 'image' | 'offer_update' | 'receipt' | 'invoice' | 'assignment'; // Added 'assignment'
-  offerDetails?: OfferDetails; 
+  offerDetails?: OfferDetails;
   assignmentDetails?: { // New Payload
     technicianId: string; // NEW: To fetch profile
     technicianName: string;
@@ -214,4 +231,24 @@ export interface ChatMessage {
     totalAmount: number;
   };
   invoiceDetails?: Invoice; // Added for official invoice
+}
+
+export interface TeamMember {
+  id: string;
+  name: string;
+  role: 'ADMIN' | 'TECHNICIAN' | 'SUPPORT';
+  email: string;
+  status: 'ACTIVE' | 'INACTIVE';
+  avatar: string;
+  assignedJobs: string[]; // Job IDs
+}
+
+export interface TeamMember {
+  id: string;
+  name: string;
+  role: 'ADMIN' | 'TECHNICIAN' | 'SUPPORT';
+  email: string;
+  status: 'ACTIVE' | 'INACTIVE';
+  avatar: string;
+  assignedJobs: string[]; // Job IDs
 }

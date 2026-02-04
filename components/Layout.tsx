@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { User } from '../types';
 import { useLanguage, LANGUAGES_LIST, Language } from '../contexts/LanguageContext';
 import { Button, Input, ZolverLogo } from './ui';
+export { Button, Input, Card, Badge } from './ui';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -22,14 +23,14 @@ interface LayoutProps {
   setAuthModalOpen: (open: boolean) => void;
 }
 
-export const Layout: React.FC<LayoutProps> = ({ 
-  children, 
-  darkMode, 
-  toggleTheme, 
-  user, 
-  onLogout, 
-  onLogoClick, 
-  onProfileClick, 
+export const Layout: React.FC<LayoutProps> = ({
+  children,
+  darkMode,
+  toggleTheme,
+  user,
+  onLogout,
+  onLogoClick,
+  onProfileClick,
   onDashboardClick,
   onLogin,
   onSignUpClick,
@@ -51,21 +52,21 @@ export const Layout: React.FC<LayoutProps> = ({
 
     return (
       <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
           onClick={() => setAuthModalOpen(false)}
         />
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 20 }}
           className="relative w-full max-w-md m-4 bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-2xl overflow-hidden z-[110]"
         >
           <div className="p-6 md:p-8">
-            <button 
+            <button
               onClick={() => setAuthModalOpen(false)}
               className="absolute top-6 right-6 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
             >
@@ -85,7 +86,7 @@ export const Layout: React.FC<LayoutProps> = ({
               <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest text-center">Quick Access (Demo)</p>
               <div className="flex flex-col gap-3">
                 {/* 1. Client */}
-                <button 
+                <button
                   onClick={() => {
                     onLogin('alice.j@email.lu', 'password123');
                     setAuthModalOpen(false);
@@ -103,8 +104,8 @@ export const Layout: React.FC<LayoutProps> = ({
                 </button>
 
                 {/* 2. Professional */}
-                <button 
-                   onClick={() => {
+                <button
+                  onClick={() => {
                     onLogin('roberto.pro@servicebid.lu', 'password123');
                     setAuthModalOpen(false);
                   }}
@@ -121,8 +122,8 @@ export const Layout: React.FC<LayoutProps> = ({
                 </button>
 
                 {/* 3. Employee */}
-                <button 
-                   onClick={() => {
+                <button
+                  onClick={() => {
                     onLogin('luigi.staff@servicebid.lu', 'password123');
                     setAuthModalOpen(false);
                   }}
@@ -147,13 +148,13 @@ export const Layout: React.FC<LayoutProps> = ({
 
             {/* Tabs */}
             <div className="flex bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl mb-8">
-              <button 
+              <button
                 onClick={() => setLoginTab('email')}
                 className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-all ${loginTab === 'email' ? 'bg-white dark:bg-slate-900 text-orange-500 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
               >
                 <Mail size={16} /> {t.loginWithEmail}
               </button>
-              <button 
+              <button
                 onClick={() => setLoginTab('phone')}
                 className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-all ${loginTab === 'phone' ? 'bg-white dark:bg-slate-900 text-orange-500 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
               >
@@ -168,14 +169,14 @@ export const Layout: React.FC<LayoutProps> = ({
             }}>
               <AnimatePresence mode="wait">
                 {loginTab === 'email' ? (
-                  <motion.div 
+                  <motion.div
                     key="email"
                     initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: 10 }}
                     transition={{ duration: 0.2 }}
                   >
-                    <Input 
+                    <Input
                       label={t.email}
                       type="email"
                       placeholder="name@email.com"
@@ -185,14 +186,14 @@ export const Layout: React.FC<LayoutProps> = ({
                     />
                   </motion.div>
                 ) : (
-                  <motion.div 
+                  <motion.div
                     key="phone"
                     initial={{ opacity: 0, x: 10 }}
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: -10 }}
                     transition={{ duration: 0.2 }}
                   >
-                    <Input 
+                    <Input
                       label={t.phoneLabel}
                       type="tel"
                       placeholder="+352 6XX XXX XXX"
@@ -205,7 +206,7 @@ export const Layout: React.FC<LayoutProps> = ({
               </AnimatePresence>
 
               <div className="space-y-1">
-                <Input 
+                <Input
                   label={t.password}
                   type="password"
                   placeholder="••••••••"
@@ -225,7 +226,7 @@ export const Layout: React.FC<LayoutProps> = ({
 
             <div className="mt-8 text-center">
               <p className="text-sm text-slate-500">
-                {t.dontHaveAccount} <button 
+                {t.dontHaveAccount} <button
                   onClick={() => {
                     onSignUpClick();
                     setAuthModalOpen(false);
@@ -246,7 +247,7 @@ export const Layout: React.FC<LayoutProps> = ({
     <div className={darkMode ? 'dark' : ''}>
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans selection:bg-orange-100 selection:text-orange-900">
         <nav className="sticky top-0 z-50 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-4 md:px-8 py-3 flex items-center justify-between">
-          <div 
+          <div
             className={`flex items-center gap-2 group ${isEmployee ? 'cursor-default' : 'cursor-pointer'}`}
             onClick={isEmployee ? undefined : onLogoClick}
           >
@@ -259,17 +260,17 @@ export const Layout: React.FC<LayoutProps> = ({
           <div className="flex items-center gap-2 sm:gap-6">
             {/* Language Selector */}
             <div className="relative">
-              <button 
+              <button
                 onClick={() => setIsLangOpen(!isLangOpen)}
                 className="flex items-center gap-2 px-2 sm:px-3 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
               >
                 <span className="text-lg">{currentLangObj.flag}</span>
                 <ChevronDown size={14} className={`text-slate-400 transition-transform ${isLangOpen ? 'rotate-180' : ''}`} />
               </button>
-              
+
               <AnimatePresence>
                 {isLangOpen && (
-                  <motion.div 
+                  <motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 10 }}
@@ -294,7 +295,7 @@ export const Layout: React.FC<LayoutProps> = ({
             </div>
 
             {/* Theme Toggle */}
-            <button 
+            <button
               onClick={toggleTheme}
               className="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:scale-110 active:scale-95 transition-all"
             >
@@ -304,7 +305,7 @@ export const Layout: React.FC<LayoutProps> = ({
             {/* User Profile / Login */}
             {user ? (
               <div className="relative">
-                <button 
+                <button
                   onClick={() => setIsUserOpen(!isUserOpen)}
                   className="flex items-center gap-2 sm:gap-3 p-1 pr-3 rounded-2xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 hover:shadow-md transition-all group"
                 >
@@ -315,7 +316,7 @@ export const Layout: React.FC<LayoutProps> = ({
 
                 <AnimatePresence>
                   {isUserOpen && (
-                    <motion.div 
+                    <motion.div
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: 10 }}
@@ -325,19 +326,19 @@ export const Layout: React.FC<LayoutProps> = ({
                         <span className="block text-[10px] font-black uppercase text-slate-400 tracking-widest">{t.loggedAs}</span>
                         <span className="block text-xs font-bold text-slate-700 dark:text-slate-300 truncate">{user.email}</span>
                       </div>
-                      <button 
+                      <button
                         onClick={() => { onDashboardClick(); setIsUserOpen(false); }}
                         className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                       >
                         <LayoutDashboard size={18} /> {t.dashboard}
                       </button>
-                      <button 
+                      <button
                         onClick={() => { onProfileClick(); setIsUserOpen(false); }}
                         className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                       >
                         <UserIcon size={18} /> {t.profile}
                       </button>
-                      <button 
+                      <button
                         onClick={() => { onLogout(); setIsUserOpen(false); }}
                         className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
                       >
@@ -348,7 +349,7 @@ export const Layout: React.FC<LayoutProps> = ({
                 </AnimatePresence>
               </div>
             ) : (
-              <Button 
+              <Button
                 onClick={() => setAuthModalOpen(true)}
                 className="h-10 sm:h-11 px-4 sm:px-6 rounded-xl font-bold text-sm shadow-lg shadow-orange-500/20 whitespace-nowrap"
               >

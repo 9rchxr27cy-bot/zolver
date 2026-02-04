@@ -1,0 +1,54 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Check if user is accessing their own document
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // --- USERS COLLECTION ---
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+      allow update: if isOwner(userId);
+    }
+    
+    // --- JOBS COLLECTION ---
+    match /jobs/{jobId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.clientId == request.auth.uid;
+      // Allow update if user is the client (owner) OR the assigned pro
+      allow update: if isAuthenticated() && (
+        resource.data.clientId == request.auth.uid || 
+        resource.data.assignedTo == request.auth.uid ||
+        // Allow Pros to bid/update status if they are involved (simplified for now, ideally tighter)
+        request.auth.token.role == 'PRO' // Basic check, ideally we check proposals
+      );
+    }
+
+    // --- PROPOSALS COLLECTION ---
+    match /proposals/{proposalId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+    }
+    
+    // --- CHATS COLLECTION ---
+    match /chats/{chatId} {
+        allow read, write: if isAuthenticated();
+    }
+    
+    // --- TRANSACTIONS ---
+    match /transactions/{txnId} {
+        allow read: if isAuthenticated();
+        // Transactions should generally be created by backend, but for this app structure we allow auth users for now
+        allow write: if isAuthenticated();
+    }
+  }
+}
